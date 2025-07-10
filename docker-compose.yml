@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  temporal-worker:
+    build:
+      context: .
+      args:
+        - ARTIFACTORY_USERNAME=${ARTIFACTORY_USERNAME}
+        - ARTIFACTORY_PASSWORD=${ARTIFACTORY_PASSWORD}
+    container_name: temporal-worker
+    environment:
+      - TEMPORAL_SERVER=temporal:7233
+      - TASK_QUEUE=default
+      - ASPNETCORE_ENVIRONMENT=Production
+      - HOT_RELOAD_ENABLED=true
+    depends_on:
+      - temporal
+      - artifactory
+    networks:
+      - temporal-network
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/auto-setup:1.23.0
+    container_name: temporal-server
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    networks:
+      - temporal-network
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "localhost:7233", "namespace", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  postgresql:
+    image: postgres:13
+    container_name: temporal-postgresql
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+      POSTGRES_DB: temporal
+    ports:
+      - "5432:5432"
+    networks:
+      - temporal-network
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal-ui:
+    image: temporalio/ui:2.27.2
+    container_name: temporal-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+    networks:
+      - temporal-network
+
+  artifactory:
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:latest
+    container_name: artifactory
+    ports:
+      - "8082:8082"
+      - "8081:8081"
+    environment:
+      - JF_SHARED_DATABASE_TYPE=postgresql
+      - JF_SHARED_DATABASE_USERNAME=artifactory
+      - JF_SHARED_DATABASE_PASSWORD=artifactory
+      - JF_SHARED_DATABASE_URL=jdbc:postgresql://artifactory-db:5432/artifactory
+      - JF_SHARED_DATABASE_DRIVER=org.postgresql.Driver
+    depends_on:
+      artifactory-db:
+        condition: service_healthy
+    networks:
+      - temporal-network
+    volumes:
+      - artifactory-data:/var/opt/jfrog/artifactory
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/artifactory/api/system/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  artifactory-db:
+    image: postgres:13
+    container_name: artifactory-postgresql
+    environment:
+      POSTGRES_PASSWORD: artifactory
+      POSTGRES_USER: artifactory
+      POSTGRES_DB: artifactory
+    ports:
+      - "5433:5432"
+    networks:
+      - temporal-network
+    volumes:
+      - artifactory-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U artifactory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  temporal-network:
+    driver: bridge
+
+volumes:
+  postgresql-data:
+  temporal-data:
+  artifactory-data:
+  artifactory-db-data:

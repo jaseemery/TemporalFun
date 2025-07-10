@@ -1,0 +1,157 @@
+info: TemporalWorkerApp.Program[0]
+      Starting Temporal Worker with hot reload: True
+info: TemporalWorkerApp.Program[0]
+      Connecting to Temporal server: localhost:7233
+info: TemporalWorkerApp.Program[0]
+      Connected to Temporal server successfully
+info: TemporalWorkerApp.Program[0]
+      Starting worker with hot reload capability...
+info: TemporalWorkerApp.PackageWatcher[0]
+      Watching for package changes in: /Users/jaseemery/.nuget/packages
+info: TemporalWorkerApp.PackageWatcher[0]
+      Watching for assembly changes in application directory: /Users/jaseemery/Desktop/code/runner/TemporalWorker/bin/Debug/net9.0/
+info: TemporalWorkerApp.HotReloadManager[0]
+      Hot reload manager initialized
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Starting Hot Reload Worker Service...
+info: TemporalWorkerApp.ActivityLoader[0]
+      Loading activities with hot reload support...
+info: TemporalWorkerApp.HotReloadManager[0]
+      Starting activity reload process...
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ProcessOrder from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ValidatePayment from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendNotification from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GenerateReport from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SaveData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GetData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendEmail from TemporalWorker
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Starting Temporal worker with 7 activities on task queue: default
+info: TemporalWorkerApp.PackageWatcher[0]
+      Package changes detected in 1 files, triggering reload
+info: TemporalWorkerApp.HotReloadManager[0]
+      Package changes detected, initiating hot reload...
+info: TemporalWorkerApp.HotReloadManager[0]
+      Starting activity reload process...
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ProcessOrder from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ValidatePayment from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendNotification from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GenerateReport from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SaveData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GetData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendEmail from TemporalWorker
+info: TemporalWorkerApp.ActivityLoader[0]
+      Activities reloaded via hot reload, notifying worker...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Activities changed detected, restarting worker...
+info: TemporalWorkerApp.HotReloadManager[0]
+      Hot reload completed successfully with 7 activities
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Initiating graceful worker restart for hot reload...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Stopping current worker gracefully...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Worker execution cancelled gracefully
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Previous worker disposed successfully
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Starting Temporal worker with 7 activities on task queue: default
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Worker restarted successfully with 7 activities
+info: TemporalWorkerApp.PackageWatcher[0]
+      Package changes detected in 1 files, triggering reload
+info: TemporalWorkerApp.HotReloadManager[0]
+      Package changes detected, initiating hot reload...
+info: TemporalWorkerApp.HotReloadManager[0]
+      Starting activity reload process...
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159867/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/yourcompany.temporal.activities.email/1.0.1752159891/lib/net9.0/YourCompany.Temporal.Activities.Email.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+warn: TemporalWorkerApp.HotReloadManager[0]
+      Failed to load assembly from path: /Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll
+      System.BadImageFormatException: Bad IL format. The format of the file '/Users/jaseemery/.nuget/packages/TestTemporalActivities/1.0.0/lib/net9.0/TestTemporalActivities.dll' is invalid.
+         at System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String assemblyPath)
+         at TemporalWorkerApp.HotReloadManager.ScanForPackageAssemblies() in /Users/jaseemery/Desktop/code/runner/TemporalWorker/HotReloadManager.cs:line 140
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ProcessOrder from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: ValidatePayment from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendNotification from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GenerateReport from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SaveData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: GetData from TemporalWorker
+info: TemporalWorkerApp.HotReloadManager[0]
+      Discovered activity: SendEmail from TemporalWorker
+info: TemporalWorkerApp.ActivityLoader[0]
+      Activities reloaded via hot reload, notifying worker...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Activities changed detected, restarting worker...
+info: TemporalWorkerApp.HotReloadManager[0]
+      Hot reload completed successfully with 7 activities
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Initiating graceful worker restart for hot reload...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Stopping current worker gracefully...
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Worker execution cancelled gracefully
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Previous worker disposed successfully
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Starting Temporal worker with 7 activities on task queue: default
+info: TemporalWorkerApp.HotReloadWorkerService[0]
+      Worker restarted successfully with 7 activities

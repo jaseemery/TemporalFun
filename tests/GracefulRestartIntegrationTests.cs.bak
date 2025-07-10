@@ -1,0 +1,220 @@
+using Microsoft.Extensions.Logging;
+using Moq;
+using FluentAssertions;
+using Xunit;
+using TemporalWorkerApp.Services;
+using TemporalWorkerApp.Loaders;
+using TemporalWorkerApp.Managers;
+using TemporalWorkerApp.Watchers;
+using Temporalio.Client;
+using System.Diagnostics;
+
+namespace TemporalWorker.Tests;
+
+public class GracefulRestartIntegrationTests : IDisposable
+{
+    private readonly Mock<ILogger<HotReloadWorkerService>> _mockServiceLogger;
+    private readonly Mock<ILogger<ActivityLoader>> _mockActivityLogger;
+    private readonly Mock<ILogger<WorkflowLoader>> _mockWorkflowLogger;
+    private readonly Mock<ILogger<HotReloadManager>> _mockHotReloadLogger;
+    private readonly Mock<ILogger<PackageWatcher>> _mockPackageWatcherLogger;
+    private readonly Mock<TemporalClient> _mockClient;
+    private readonly string _testTaskQueue = "test-queue";
+
+    public GracefulRestartIntegrationTests()
+    {
+        _mockServiceLogger = new Mock<ILogger<HotReloadWorkerService>>();
+        _mockActivityLogger = new Mock<ILogger<ActivityLoader>>();
+        _mockWorkflowLogger = new Mock<ILogger<WorkflowLoader>>();
+        _mockHotReloadLogger = new Mock<ILogger<HotReloadManager>>();
+        _mockPackageWatcherLogger = new Mock<ILogger<PackageWatcher>>();
+        _mockClient = new Mock<TemporalClient>();
+    }
+
+    [Fact]
+    public void HotReloadWorkerService_ShouldInitializeProperly()
+    {
+        // Arrange
+        var activityLoader = CreateActivityLoader();
+        var workflowLoader = CreateWorkflowLoader(activityLoader.HotReloadManager);
+
+        // Act
+        var service = new HotReloadWorkerService(
+            _mockServiceLogger.Object,
+            _mockClient.Object,
+            _testTaskQueue,
+            activityLoader,
+            workflowLoader
+        );
+
+        // Assert
+        service.Should().NotBeNull();
+        
+        // Cleanup
+        activityLoader.Dispose();
+        workflowLoader.Dispose();
+        service.Dispose();
+    }
+
+    [Fact]
+    public void ActivityLoader_ShouldExposeHotReloadManager()
+    {
+        // Arrange & Act
+        var activityLoader = CreateActivityLoader();
+
+        // Assert
+        activityLoader.HotReloadManager.Should().NotBeNull();
+        
+        // Cleanup
+        activityLoader.Dispose();
+    }
+
+    [Fact]
+    public void WorkflowLoader_ShouldSubscribeToHotReloadEvents()
+    {
+        // Arrange
+        var activityLoader = CreateActivityLoader();
+        var workflowLoader = CreateWorkflowLoader(activityLoader.HotReloadManager);
+        var eventTriggered = false;
+
+        workflowLoader.WorkflowsChanged += (workflows) => eventTriggered = true;
+
+        // Act
+        activityLoader.HotReloadManager.WorkflowsReloaded?.Invoke(new List<Type>());
+
+        // Assert
+        eventTriggered.Should().BeTrue();
+        
+        // Cleanup
+        activityLoader.Dispose();
+        workflowLoader.Dispose();
+    }
+
+    [Fact]
+    public async Task GracefulRestart_ShouldHandleTimeout()
+    {
+        // Arrange
+        var activityLoader = CreateActivityLoader();
+        var workflowLoader = CreateWorkflowLoader(activityLoader.HotReloadManager);
+        
+        var service = new HotReloadWorkerService(
+            _mockServiceLogger.Object,
+            _mockClient.Object,
+            _testTaskQueue,
+            activityLoader,
+            workflowLoader
+        );
+
+        var cancellationTokenSource = new CancellationTokenSource();
+
+        // Act & Assert
+        var stopwatch = Stopwatch.StartNew();
+        
+        // Start the service
+        var startTask = service.StartAsync(cancellationTokenSource.Token);
+        
+        // Give it a moment to start
+        await Task.Delay(100);
+        
+        // Stop the service
+        cancellationTokenSource.Cancel();
+        var stopTask = service.StopAsync(CancellationToken.None);
+        
+        // Should complete within reasonable time (graceful shutdown timeout)
+        var timeout = Task.Delay(TimeSpan.FromSeconds(60));
+        var completedTask = await Task.WhenAny(stopTask, timeout);
+        
+        stopwatch.Stop();
+        
+        completedTask.Should().Be(stopTask, "Service should stop gracefully within timeout");
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(45), "Graceful shutdown should complete quickly");
+        
+        // Cleanup
+        activityLoader.Dispose();
+        workflowLoader.Dispose();
+        service.Dispose();
+        cancellationTokenSource.Dispose();
+    }
+
+    [Fact]
+    public void MultipleRestarts_ShouldNotCauseMemoryLeaks()
+    {
+        // Arrange
+        var activityLoader = CreateActivityLoader();
+        var workflowLoader = CreateWorkflowLoader(activityLoader.HotReloadManager);
+        
+        var initialMemory = GC.GetTotalMemory(true);
+
+        // Act - Simulate multiple restarts
+        for (int i = 0; i < 10; i++)
+        {
+            // Trigger activity change event
+            activityLoader.ActivitiesChanged?.Invoke(new List<Delegate>());
+            
+            // Trigger workflow change event  
+            workflowLoader.WorkflowsChanged?.Invoke(new List<Type>());
+            
+            // Force garbage collection
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        var finalMemory = GC.GetTotalMemory(true);
+
+        // Assert
+        var memoryIncrease = finalMemory - initialMemory;
+        memoryIncrease.Should().BeLessThan(10_000_000, "Memory increase should be minimal after multiple restarts"); // 10MB threshold
+        
+        // Cleanup
+        activityLoader.Dispose();
+        workflowLoader.Dispose();
+    }
+
+    [Fact]
+    public void ErrorHandling_ShouldNotCrashService()
+    {
+        // Arrange
+        var activityLoader = CreateActivityLoader();
+        var workflowLoader = CreateWorkflowLoader(activityLoader.HotReloadManager);
+
+        // Act & Assert - Should not throw
+        var act = () =>
+        {
+            var service = new HotReloadWorkerService(
+                _mockServiceLogger.Object,
+                _mockClient.Object,
+                _testTaskQueue,
+                activityLoader,
+                workflowLoader
+            );
+            
+            service.Dispose();
+        };
+
+        act.Should().NotThrow();
+        
+        // Cleanup
+        activityLoader.Dispose();
+        workflowLoader.Dispose();
+    }
+
+    private ActivityLoader CreateActivityLoader()
+    {
+        return new ActivityLoader(
+            _mockActivityLogger.Object,
+            _mockHotReloadLogger.Object,
+            _mockPackageWatcherLogger.Object
+        );
+    }
+
+    private WorkflowLoader CreateWorkflowLoader(HotReloadManager hotReloadManager)
+    {
+        return new WorkflowLoader(_mockWorkflowLogger.Object, hotReloadManager);
+    }
+
+    public void Dispose()
+    {
+        // Cleanup is handled in individual tests
+    }
+}

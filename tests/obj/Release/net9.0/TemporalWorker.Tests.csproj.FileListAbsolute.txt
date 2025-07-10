@@ -1,0 +1,7 @@
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/bin/Release/net9.0/.msCoverageSourceRootsMapping_TemporalWorker.Tests
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/bin/Release/net9.0/CoverletSourceRootsMapping_TemporalWorker.Tests
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/obj/Release/net9.0/TemporalWorker.Tests.csproj.AssemblyReference.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/obj/Release/net9.0/TemporalWorker.Tests.GeneratedMSBuildEditorConfig.editorconfig
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/obj/Release/net9.0/TemporalWorker.Tests.AssemblyInfoInputs.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/obj/Release/net9.0/TemporalWorker.Tests.AssemblyInfo.cs
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/tests/obj/Release/net9.0/TemporalWorker.Tests.csproj.CoreCompileInputs.cache

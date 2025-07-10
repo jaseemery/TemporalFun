@@ -1,0 +1,3 @@
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/obj/Release/net8.0/NewUniqueActivities.csproj.AssemblyReference.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/obj/Release/net8.0/NewUniqueActivities.GeneratedMSBuildEditorConfig.editorconfig
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/obj/Release/net8.0/NewUniqueActivities.csproj.CoreCompileInputs.cache

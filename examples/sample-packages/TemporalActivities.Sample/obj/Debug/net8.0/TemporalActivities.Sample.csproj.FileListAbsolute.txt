@@ -1,0 +1,12 @@
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/bin/Debug/net8.0/TemporalActivities.Sample.deps.json
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/bin/Debug/net8.0/TemporalActivities.Sample.dll
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/bin/Debug/net8.0/TemporalActivities.Sample.pdb
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.csproj.AssemblyReference.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.GeneratedMSBuildEditorConfig.editorconfig
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.AssemblyInfoInputs.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.AssemblyInfo.cs
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.csproj.CoreCompileInputs.cache
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.dll
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/refint/TemporalActivities.Sample.dll
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/TemporalActivities.Sample.pdb
+/Users/jaseemery/Desktop/code/runner/TemporalWorker/sample-packages/TemporalActivities.Sample/obj/Debug/net8.0/ref/TemporalActivities.Sample.dll
