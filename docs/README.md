@@ -5,7 +5,10 @@ This Temporal worker dynamically loads activities from NuGet packages hosted on 
 ## Features
 
 - **🔥 Hot Reload**: Automatically detects new packages and reloads without worker restart
-- **Dynamic Activity Loading**: Automatically discovers and registers activities from NuGet packages
+- **🛡️ Graceful Restart**: Safe worker restarts with proper resource cleanup and timeout handling
+- **🔄 Workflow Hot Reload**: Dynamic loading of Temporal workflows from NuGet packages
+- **⚡ Activity Hot Reload**: Dynamic loading of Temporal activities from NuGet packages
+- **🧪 Comprehensive Testing**: Full test suite with unit, integration, and hot reload tests
 - **Local JFrog Artifactory**: Complete Artifactory instance running in Docker
 - **Automated Setup**: Scripts to configure repositories and upload sample packages
 - **Fallback Support**: Uses local activities if no external packages are found
@@ -65,7 +68,7 @@ docker compose restart temporal-worker
 | Temporal UI | http://localhost:8080 | - |
 | Temporal Server | localhost:7233 | - |
 
-## Sample Activities
+## Sample Activities & Workflows
 
 The included sample package (`TemporalActivities.Sample`) provides these activities:
 - `ProcessOrder` - Process customer orders
@@ -73,11 +76,16 @@ The included sample package (`TemporalActivities.Sample`) provides these activit
 - `SendNotification` - Send notifications
 - `GenerateReport` - Generate business reports
 
-## Creating Your Own Activity Packages
+Sample workflows available for hot reload:
+- `OrderProcessingWorkflow` - Complete order processing workflow
+- `UserOnboardingWorkflow` - User registration and onboarding
+- `SimpleWorkflow` - Basic workflow for testing
+
+## Creating Your Own Activity & Workflow Packages
 
 1. Create a new .NET class library project
 2. Add reference to `Temporalio` NuGet package
-3. Create static classes with methods decorated with `[Activity]`
+3. Create activities and workflows with proper attributes
 4. Build and pack: `dotnet pack -c Release`
 5. Upload to Artifactory via UI or API
 
@@ -100,6 +108,26 @@ public static class MyActivities
 }
 ```
 
+### Example Workflow
+```csharp
+using Temporalio.Workflows;
+
+[Workflow("my-workflow")]
+public class MyWorkflow
+{
+    [WorkflowRun]
+    public async Task<string> RunAsync(WorkflowInput input)
+    {
+        // Execute activities
+        var result = await Workflow.ExecuteActivityAsync(
+            () => MyActivities.ProcessData(input.Data),
+            new() { StartToCloseTimeout = TimeSpan.FromMinutes(5) });
+        
+        return result;
+    }
+}
+```
+
 ## Advanced Configuration
 
 ### Custom Artifactory URL
@@ -115,8 +143,9 @@ ARTIFACTORY_USERNAME=your-username
 ARTIFACTORY_PASSWORD=your-api-key
 ```
 
-## Activity Package Requirements
+## Package Requirements
 
+### Activity Package Requirements
 Activity packages should contain classes with static methods decorated with `[Activity]` attributes:
 
 ```csharp
@@ -133,21 +162,81 @@ public static class MyActivities
 }
 ```
 
-## Hot Reload
+### Workflow Package Requirements
+Workflow packages should contain classes decorated with `[Workflow]` attributes and `[WorkflowRun]` methods:
 
-The worker monitors file system changes and automatically:
+```csharp
+using Temporalio.Workflows;
+
+[Workflow("my-business-workflow")]
+public class MyBusinessWorkflow
+{
+    [WorkflowRun]
+    public async Task<Result> RunAsync(Input input)
+    {
+        // Workflow implementation
+        return new Result();
+    }
+}
+```
+
+### Project Structure
+For packages containing both activities and workflows:
+```
+MyTemporalPackage/
+├── Activities/
+│   ├── ProcessingActivities.cs
+│   └── NotificationActivities.cs
+├── Workflows/
+│   ├── OrderWorkflow.cs
+│   └── PaymentWorkflow.cs
+└── Models/
+    ├── Input.cs
+    └── Result.cs
+```
+
+## Hot Reload & Graceful Restart
+
+The worker supports dynamic loading of both activities and workflows with safe restart mechanisms:
+
+### Hot Reload Features
 1. **Detects** new packages in NuGet cache directories
 2. **Unloads** old assemblies using collectible load contexts
-3. **Loads** new assemblies with updated activities
-4. **Restarts** the worker with new activities (seamless to workflows)
+3. **Loads** new assemblies with updated activities and workflows
+4. **Restarts** the worker gracefully with new components
 
-### How It Works
+### Architecture Components
 - **PackageWatcher**: Monitors NuGet cache directories for .dll changes
 - **HotReloadManager**: Handles assembly loading/unloading with collectible contexts
-- **HotReloadWorkerService**: Manages worker lifecycle and restarts
+- **ActivityLoader**: Dynamically loads and manages Temporal activities
+- **WorkflowLoader**: Dynamically loads and manages Temporal workflows
+- **HotReloadWorkerService**: Manages worker lifecycle with graceful restarts
+
+### Graceful Restart Features
+- **Double Ctrl+C Protection**: First Ctrl+C triggers graceful shutdown, second forces exit
+- **Timeout Handling**: 30-second graceful shutdown timeout with force termination fallback
+- **Resource Cleanup**: Proper disposal of workers, connections, and managed resources
+- **Race Condition Prevention**: Thread-safe restart logic with proper synchronization
+- **Comprehensive Logging**: Detailed logging of restart operations and status
 
 ### Configuration
-Set `HOT_RELOAD_ENABLED=false` to disable hot reload and use traditional mode.
+- Set `HOT_RELOAD_ENABLED=false` to disable hot reload and use traditional mode
+- Graceful restart is always enabled for worker safety
+
+### Testing
+Run the comprehensive test suite:
+```bash
+# Run all tests
+./scripts/run-tests.sh
+
+# Run specific test categories
+./scripts/run-tests.sh unit          # Unit tests only
+./scripts/run-tests.sh integration   # Integration tests only
+./scripts/run-tests.sh workflow      # Workflow tests only
+./scripts/run-tests.sh activity      # Activity tests only
+./scripts/run-tests.sh hotreload     # Hot reload tests only
+./scripts/run-tests.sh coverage      # Tests with coverage report
+```
 
 ## Environment Variables
 
@@ -182,3 +271,21 @@ Set `HOT_RELOAD_ENABLED=false` to disable hot reload and use traditional mode.
 - Verify activity methods have `[Activity]` attribute
 - Check assembly is properly loaded (review logs)
 - Ensure activity methods are public and static
+
+### Workflow Not Loading
+- Verify workflow classes have `[Workflow]` attribute
+- Ensure workflow run method has `[WorkflowRun]` attribute
+- Check workflow classes are public and non-static
+- Review logs for assembly loading errors
+
+### Hot Reload Issues
+- Check file system permissions on NuGet cache directories
+- Verify HOT_RELOAD_ENABLED environment variable is set to `true`
+- Review HotReloadWorkerService logs for restart errors
+- Ensure package assemblies are not locked by other processes
+
+### Test Failures
+- Run tests individually to isolate issues: `./scripts/run-tests.sh unit`
+- Check test logs for specific error details
+- Verify all dependencies are properly restored: `dotnet restore tests/`
+- Ensure no processes are locking test assemblies
