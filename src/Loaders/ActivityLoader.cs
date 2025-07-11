@@ -106,45 +106,103 @@ public class ActivityLoader : IDisposable
     
     private static Delegate? CreateActivityDelegate(MethodInfo method)
     {
-        // Create a delegate for the static method
-        // This handles various method signatures dynamically
-        var parameters = method.GetParameters();
-        var parameterTypes = parameters.Select(p => p.ParameterType).ToArray();
-        var returnType = method.ReturnType;
-        
-        // Create appropriate delegate type based on parameters and return type
-        Type? delegateType;
-        
-        if (returnType == typeof(void))
+        try
         {
-            delegateType = parameterTypes.Length switch
+            // Validate method is safe to create delegate from
+            if (!IsValidActivityMethod(method))
             {
-                0 => typeof(Action),
-                1 => typeof(Action<>).MakeGenericType(parameterTypes),
-                2 => typeof(Action<,>).MakeGenericType(parameterTypes),
-                3 => typeof(Action<,,>).MakeGenericType(parameterTypes),
-                4 => typeof(Action<,,,>).MakeGenericType(parameterTypes),
-                _ => null // Add more cases as needed
-            };
-        }
-        else
-        {
-            var allTypes = parameterTypes.Concat(new[] { returnType }).ToArray();
-            delegateType = allTypes.Length switch
-            {
-                1 => typeof(Func<>).MakeGenericType(allTypes),
-                2 => typeof(Func<,>).MakeGenericType(allTypes),
-                3 => typeof(Func<,,>).MakeGenericType(allTypes),
-                4 => typeof(Func<,,,>).MakeGenericType(allTypes),
-                5 => typeof(Func<,,,,>).MakeGenericType(allTypes),
-                _ => null // Add more cases as needed
-            };
-        }
-        
-        if (delegateType == null)
-            return null;
+                return null;
+            }
             
-        return Delegate.CreateDelegate(delegateType, method);
+            // Create a delegate for the static method
+            // This handles various method signatures dynamically
+            var parameters = method.GetParameters();
+            var parameterTypes = parameters.Select(p => p.ParameterType).ToArray();
+            var returnType = method.ReturnType;
+            
+            // Validate parameter types are safe
+            if (!AreParameterTypesSafe(parameterTypes))
+            {
+                return null;
+            }
+            
+            // Create appropriate delegate type based on parameters and return type
+            Type? delegateType;
+            
+            if (returnType == typeof(void))
+            {
+                delegateType = parameterTypes.Length switch
+                {
+                    0 => typeof(Action),
+                    1 => typeof(Action<>).MakeGenericType(parameterTypes),
+                    2 => typeof(Action<,>).MakeGenericType(parameterTypes),
+                    3 => typeof(Action<,,>).MakeGenericType(parameterTypes),
+                    4 => typeof(Action<,,,>).MakeGenericType(parameterTypes),
+                    _ => null // Add more cases as needed
+                };
+            }
+            else
+            {
+                var allTypes = parameterTypes.Concat(new[] { returnType }).ToArray();
+                delegateType = allTypes.Length switch
+                {
+                    1 => typeof(Func<>).MakeGenericType(allTypes),
+                    2 => typeof(Func<,>).MakeGenericType(allTypes),
+                    3 => typeof(Func<,,>).MakeGenericType(allTypes),
+                    4 => typeof(Func<,,,>).MakeGenericType(allTypes),
+                    5 => typeof(Func<,,,,>).MakeGenericType(allTypes),
+                    _ => null // Add more cases as needed
+                };
+            }
+            
+            if (delegateType == null)
+                return null;
+                
+            return Delegate.CreateDelegate(delegateType, method);
+        }
+        catch (Exception)
+        {
+            // Return null for any delegate creation failures
+            return null;
+        }
+    }
+    
+    private static bool IsValidActivityMethod(MethodInfo method)
+    {
+        // Ensure method is static and public
+        if (!method.IsStatic || !method.IsPublic)
+            return false;
+            
+        // Ensure method has Activity attribute
+        if (method.GetCustomAttribute<ActivityAttribute>() == null)
+            return false;
+            
+        // Check method signature constraints
+        var parameters = method.GetParameters();
+        if (parameters.Length > 16) // .NET delegate limit
+            return false;
+            
+        return true;
+    }
+    
+    private static bool AreParameterTypesSafe(Type[] parameterTypes)
+    {
+        foreach (var type in parameterTypes)
+        {
+            // Exclude unsafe types
+            if (type == typeof(IntPtr) || type == typeof(UIntPtr))
+                return false;
+                
+            // Exclude function pointers
+            if (type.IsFunctionPointer)
+                return false;
+                
+            // Exclude ref/out parameters for safety
+            if (type.IsByRef)
+                return false;
+        }
+        
+        return true;
     }
     
     private static bool IsSystemAssembly(Assembly assembly)

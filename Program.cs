@@ -6,6 +6,7 @@ using TemporalWorkerApp.Loaders;
 using TemporalWorkerApp.Services;
 using TemporalWorkerApp.Managers;
 using TemporalWorkerApp.Watchers;
+using TemporalWorkerApp.Configuration;
 
 namespace TemporalWorkerApp;
 
@@ -25,6 +26,7 @@ class Program
                 // Register services for dependency injection
                 services.AddSingleton<ActivityLoader>();
                 services.AddSingleton<HotReloadWorkerService>();
+                services.AddSingleton<TemporalWorkerApp.Services.HealthCheckService>();
             })
             .Build();
 
@@ -38,11 +40,8 @@ class Program
         logger.LogInformation("Starting Temporal Worker with hot reload: {HotReloadEnabled}", hotReloadEnabled);
         logger.LogInformation("Connecting to Temporal server: {Server}", temporalServer);
         
-        // Connect to Temporal
-        var client = await TemporalClient.ConnectAsync(new()
-        {
-            TargetHost = temporalServer,
-        });
+        // Connect to Temporal with retry logic
+        var client = await ConnectToTemporalWithRetryAsync(temporalServer, logger);
 
         logger.LogInformation("Connected to Temporal server successfully");
 
@@ -69,6 +68,13 @@ class Program
                 activityLoader,
                 workflowLoader
             );
+
+            // Start health check service
+            var healthCheckService = new TemporalWorkerApp.Services.HealthCheckService(
+                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Services.HealthCheckService>>(),
+                workerService
+            );
+            _ = healthCheckService.StartAsync(CancellationToken.None);
 
             // Run the hot reload service with graceful shutdown
             using var cts = new CancellationTokenSource();
@@ -123,6 +129,7 @@ class Program
                 {
                     using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                     await workerService.StopAsync(timeoutCts.Token);
+                    await healthCheckService.StopAsync(timeoutCts.Token);
                     activityLoader.Dispose();
                     logger.LogInformation("Cleanup completed successfully");
                 }
@@ -140,6 +147,13 @@ class Program
         {
             // Traditional mode without hot reload
             logger.LogInformation("Starting worker in traditional mode (no hot reload)...");
+            
+            // Start health check service for traditional mode too
+            var healthCheckService = new TemporalWorkerApp.Services.HealthCheckService(
+                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Services.HealthCheckService>>(),
+                null // No hot reload worker service in traditional mode
+            );
+            _ = healthCheckService.StartAsync(CancellationToken.None);
             
             var activities = ActivityLoader.LoadActivitiesFromAssemblies(logger);
             var activityList = activities.ToList();
@@ -201,7 +215,58 @@ class Program
             finally
             {
                 logger.LogInformation("Worker shutdown completed");
+                
+                // Cleanup health check service in traditional mode
+                try
+                {
+                    await healthCheckService.StopAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error stopping health check service");
+                }
             }
         }
+    }
+
+    private static async Task<TemporalClient> ConnectToTemporalWithRetryAsync(string temporalServer, ILogger logger)
+    {
+        const int maxRetries = 5;
+        var baseDelay = TimeSpan.FromSeconds(2);
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                logger.LogInformation("Attempting to connect to Temporal server (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                
+                var client = await TemporalClient.ConnectAsync(new()
+                {
+                    TargetHost = temporalServer,
+                });
+                
+                // Test connection by checking system info
+                await client.Connection.WorkflowService.GetSystemInfoAsync(new());
+                
+                logger.LogInformation("Successfully connected to Temporal server on attempt {Attempt}", attempt);
+                return client;
+            }
+            catch (Exception ex) when (attempt < maxRetries)
+            {
+                var delay = TimeSpan.FromMilliseconds(baseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+                logger.LogWarning(ex, "Failed to connect to Temporal server on attempt {Attempt}. Retrying in {Delay}ms", attempt, delay.TotalMilliseconds);
+                
+                await Task.Delay(delay);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to connect to Temporal server after {MaxRetries} attempts", maxRetries);
+                throw new InvalidOperationException($"Unable to connect to Temporal server at {temporalServer} after {maxRetries} attempts", ex);
+            }
+        }
+        
+        throw new InvalidOperationException($"Unable to connect to Temporal server at {temporalServer}");
     }
 }

@@ -1,7 +1,11 @@
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
+FROM mcr.microsoft.com/dotnet/runtime:9.0 AS base
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# Create non-root user for security
+RUN groupadd -r temporal && useradd -r -g temporal temporal
+RUN chown -R temporal:temporal /app
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
 # Copy build-time NuGet.Config (uses only nuget.org)
@@ -39,5 +43,12 @@ ARG ARTIFACTORY_USERNAME
 ARG ARTIFACTORY_PASSWORD
 ENV ARTIFACTORY_USERNAME=$ARTIFACTORY_USERNAME
 ENV ARTIFACTORY_PASSWORD=$ARTIFACTORY_PASSWORD
+
+# Switch to non-root user
+USER temporal
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8085/health || exit 1
 
 ENTRYPOINT ["dotnet", "TemporalWorker.dll"]

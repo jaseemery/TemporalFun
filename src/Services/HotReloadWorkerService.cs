@@ -16,7 +16,9 @@ public class HotReloadWorkerService : BackgroundService
     
     private Temporalio.Worker.TemporalWorker? _currentWorker;
     private readonly object _workerLock = new();
+    private readonly SemaphoreSlim _restartSemaphore = new(1, 1);
     private CancellationTokenSource? _currentWorkerCts;
+    private volatile bool _isRestarting = false;
 
     public HotReloadWorkerService(
         ILogger<HotReloadWorkerService> logger,
@@ -105,23 +107,39 @@ public class HotReloadWorkerService : BackgroundService
 
     private async Task RestartWorkerWithNewComponentsAsync()
     {
-        _logger.LogInformation("Initiating graceful worker restart for hot reload...");
-        
-        CancellationTokenSource? ctsToCancel = null;
-        TemporalWorker? workerToDispose = null;
-        
-        lock (_workerLock)
+        if (_isRestarting)
         {
-            _logger.LogInformation("Stopping current worker gracefully...");
-            
-            // Capture references to avoid race conditions
-            ctsToCancel = _currentWorkerCts;
-            workerToDispose = _currentWorker;
-            
-            // Clear current references immediately
-            _currentWorker = null;
-            _currentWorkerCts = null;
+            _logger.LogInformation("Worker restart already in progress, ignoring duplicate request");
+            return;
         }
+
+        await _restartSemaphore.WaitAsync();
+        try
+        {
+            if (_isRestarting)
+            {
+                _logger.LogInformation("Worker restart already in progress, ignoring duplicate request");
+                return;
+            }
+
+            _isRestarting = true;
+            _logger.LogInformation("Initiating graceful worker restart for hot reload...");
+            
+            CancellationTokenSource? ctsToCancel = null;
+            TemporalWorker? workerToDispose = null;
+            
+            lock (_workerLock)
+            {
+                _logger.LogInformation("Stopping current worker gracefully...");
+                
+                // Capture references to avoid race conditions
+                ctsToCancel = _currentWorkerCts;
+                workerToDispose = _currentWorker;
+                
+                // Clear current references immediately
+                _currentWorker = null;
+                _currentWorkerCts = null;
+            }
 
         // Cancel outside of lock to avoid race conditions
         try
@@ -182,11 +200,17 @@ public class HotReloadWorkerService : BackgroundService
         var activities = await _activityLoader.LoadActivitiesWithHotReloadAsync();
         var workflows = await _workflowLoader.LoadWorkflowsWithHotReloadAsync();
 
-        // Start new worker with updated components
-        await StartWorkerAsync(activities, workflows, CancellationToken.None);
-        
-        _logger.LogInformation("Worker restarted successfully with {ActivityCount} activities and {WorkflowCount} workflows", 
-            activities.Count(), workflows.Count());
+            // Start new worker with updated components
+            await StartWorkerAsync(activities, workflows, CancellationToken.None);
+            
+            _logger.LogInformation("Worker restarted successfully with {ActivityCount} activities and {WorkflowCount} workflows", 
+                activities.Count(), workflows.Count());
+        }
+        finally
+        {
+            _isRestarting = false;
+            _restartSemaphore.Release();
+        }
     }
 
     private async Task StartWorkerAsync(IEnumerable<Delegate> activities, IEnumerable<Type> workflows, CancellationToken cancellationToken)
@@ -357,6 +381,7 @@ public class HotReloadWorkerService : BackgroundService
         await StopCurrentWorkerAsync();
         _activityLoader.Dispose();
         _workflowLoader.Dispose();
+        _restartSemaphore.Dispose();
         
         await base.StopAsync(cancellationToken);
         

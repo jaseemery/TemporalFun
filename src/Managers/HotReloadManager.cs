@@ -11,22 +11,48 @@ namespace TemporalWorkerApp.Managers;
 public class HotReloadManager : IDisposable
 {
     private readonly ILogger<HotReloadManager> _logger;
-    private readonly PackageWatcher _packageWatcher;
+    private readonly PackageWatcher? _packageWatcher;
+    private readonly ArtifactoryFeedWatcher? _feedWatcher;
     private readonly ConcurrentDictionary<string, WeakReference> _loadedAssemblies = new();
     private readonly ConcurrentDictionary<string, AssemblyLoadContext> _loadContexts = new();
+    private readonly ConcurrentDictionary<string, DateTime> _processedPackages = new();
     private readonly object _reloadLock = new();
     private bool _disposed = false;
 
     public event Action<IEnumerable<Delegate>>? ActivitiesReloaded;
     public event Action<IEnumerable<Type>>? WorkflowsReloaded;
 
+    // Constructor for file system watching (existing behavior)
     public HotReloadManager(ILogger<HotReloadManager> logger, ILogger<PackageWatcher> packageWatcherLogger)
     {
         _logger = logger;
         _packageWatcher = new PackageWatcher(packageWatcherLogger);
         _packageWatcher.PackagesChanged += OnPackagesChanged;
         
-        _logger.LogInformation("Hot reload manager initialized");
+        _logger.LogInformation("Hot reload manager initialized with file system watching");
+    }
+
+    // Constructor for Artifactory feed watching (new behavior)
+    public HotReloadManager(
+        ILogger<HotReloadManager> logger, 
+        ILogger<ArtifactoryFeedWatcher> feedWatcherLogger,
+        string feedUrl,
+        string? username = null,
+        string? password = null,
+        TimeSpan? pollInterval = null,
+        IEnumerable<string>? packageFilters = null)
+    {
+        _logger = logger;
+        _feedWatcher = new ArtifactoryFeedWatcher(
+            feedWatcherLogger, 
+            feedUrl, 
+            username, 
+            password, 
+            pollInterval, 
+            packageFilters);
+        _feedWatcher.NewPackagesDetected += OnNewPackagesDetected;
+        
+        _logger.LogInformation("Hot reload manager initialized with Artifactory feed watching: {FeedUrl}", feedUrl);
     }
 
     private void OnPackagesChanged()
@@ -52,6 +78,59 @@ public class HotReloadManager : IDisposable
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during hot reload process");
+            }
+        });
+    }
+
+    private void OnNewPackagesDetected(IEnumerable<string> packagePaths)
+    {
+        _logger.LogInformation("New packages detected from Artifactory feed: {Count} packages", packagePaths.Count());
+        
+        Task.Run(async () =>
+        {
+            try
+            {
+                // Process each new package
+                var newActivities = new List<Delegate>();
+                var newWorkflows = new List<Type>();
+
+                foreach (var packagePath in packagePaths)
+                {
+                    // Skip if we've already processed this package recently
+                    var packageInfo = new FileInfo(packagePath);
+                    var lastProcessed = _processedPackages.GetValueOrDefault(packagePath);
+                    
+                    if (packageInfo.LastWriteTime <= lastProcessed.AddMinutes(1))
+                    {
+                        _logger.LogDebug("Skipping recently processed package: {PackagePath}", packagePath);
+                        continue;
+                    }
+
+                    _logger.LogInformation("Processing new package: {PackagePath}", packagePath);
+                    
+                    // Extract and load assemblies from the nupkg
+                    var packageActivities = await LoadActivitiesFromPackageAsync(packagePath);
+                    var packageWorkflows = await LoadWorkflowsFromPackageAsync(packagePath);
+                    
+                    newActivities.AddRange(packageActivities);
+                    newWorkflows.AddRange(packageWorkflows);
+                    
+                    // Mark as processed
+                    _processedPackages[packagePath] = DateTime.UtcNow;
+                }
+
+                if (newActivities.Any() || newWorkflows.Any())
+                {
+                    ActivitiesReloaded?.Invoke(newActivities);
+                    WorkflowsReloaded?.Invoke(newWorkflows);
+                    
+                    _logger.LogInformation("Feed-based hot reload completed with {ActivityCount} activities and {WorkflowCount} workflows", 
+                        newActivities.Count, newWorkflows.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing new packages from feed");
             }
         });
     }
@@ -391,11 +470,164 @@ public class HotReloadManager : IDisposable
         return false;
     }
 
+    private async Task<IEnumerable<Delegate>> LoadActivitiesFromPackageAsync(string packagePath)
+    {
+        var activities = new List<Delegate>();
+        
+        try
+        {
+            // Extract .nupkg file (which is just a zip file)
+            var extractPath = Path.Combine(Path.GetTempPath(), "TemporalWorker", "PackageExtract", Path.GetFileNameWithoutExtension(packagePath));
+            
+            if (Directory.Exists(extractPath))
+            {
+                Directory.Delete(extractPath, true);
+            }
+            Directory.CreateDirectory(extractPath);
+
+            // Extract the nupkg file
+            System.IO.Compression.ZipFile.ExtractToDirectory(packagePath, extractPath);
+            
+            // Find all .dll files in the lib folder
+            var libPath = Path.Combine(extractPath, "lib");
+            if (Directory.Exists(libPath))
+            {
+                var dllFiles = Directory.GetFiles(libPath, "*.dll", SearchOption.AllDirectories);
+                
+                foreach (var dllFile in dllFiles)
+                {
+                    try
+                    {
+                        // Create a new collectible load context
+                        var contextName = $"Package_{Path.GetFileNameWithoutExtension(packagePath)}_{DateTime.UtcNow.Ticks}";
+                        var loadContext = new AssemblyLoadContext(contextName, isCollectible: true);
+                        
+                        var assembly = loadContext.LoadFromAssemblyPath(dllFile);
+                        
+                        _loadContexts[dllFile] = loadContext;
+                        _loadedAssemblies[dllFile] = new WeakReference(assembly);
+                        
+                        if (ShouldScanAssembly(assembly))
+                        {
+                            var assemblyActivities = ExtractActivitiesFromAssembly(assembly);
+                            activities.AddRange(assemblyActivities);
+                        }
+                        
+                        _logger.LogDebug("Loaded assembly from package: {DllFile}", dllFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to load assembly from package: {DllFile}", dllFile);
+                    }
+                }
+            }
+            
+            // Cleanup extracted files
+            try
+            {
+                Directory.Delete(extractPath, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cleanup extracted package: {ExtractPath}", extractPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading activities from package: {PackagePath}", packagePath);
+        }
+        
+        return activities;
+    }
+
+    private async Task<IEnumerable<Type>> LoadWorkflowsFromPackageAsync(string packagePath)
+    {
+        var workflows = new List<Type>();
+        
+        try
+        {
+            // Extract .nupkg file (which is just a zip file)
+            var extractPath = Path.Combine(Path.GetTempPath(), "TemporalWorker", "PackageExtract", Path.GetFileNameWithoutExtension(packagePath));
+            
+            if (Directory.Exists(extractPath))
+            {
+                Directory.Delete(extractPath, true);
+            }
+            Directory.CreateDirectory(extractPath);
+
+            // Extract the nupkg file
+            System.IO.Compression.ZipFile.ExtractToDirectory(packagePath, extractPath);
+            
+            // Find all .dll files in the lib folder
+            var libPath = Path.Combine(extractPath, "lib");
+            if (Directory.Exists(libPath))
+            {
+                var dllFiles = Directory.GetFiles(libPath, "*.dll", SearchOption.AllDirectories);
+                
+                foreach (var dllFile in dllFiles)
+                {
+                    try
+                    {
+                        // Check if we already loaded this assembly for activities
+                        if (_loadedAssemblies.TryGetValue(dllFile, out var weakRef) && weakRef.Target is Assembly assembly)
+                        {
+                            if (ShouldScanAssembly(assembly))
+                            {
+                                var assemblyWorkflows = ExtractWorkflowsFromAssembly(assembly);
+                                workflows.AddRange(assemblyWorkflows);
+                            }
+                        }
+                        else
+                        {
+                            // Load the assembly if not already loaded
+                            var contextName = $"Package_{Path.GetFileNameWithoutExtension(packagePath)}_{DateTime.UtcNow.Ticks}";
+                            var loadContext = new AssemblyLoadContext(contextName, isCollectible: true);
+                            
+                            assembly = loadContext.LoadFromAssemblyPath(dllFile);
+                            
+                            _loadContexts[dllFile] = loadContext;
+                            _loadedAssemblies[dllFile] = new WeakReference(assembly);
+                            
+                            if (ShouldScanAssembly(assembly))
+                            {
+                                var assemblyWorkflows = ExtractWorkflowsFromAssembly(assembly);
+                                workflows.AddRange(assemblyWorkflows);
+                            }
+                        }
+                        
+                        _logger.LogDebug("Scanned assembly for workflows from package: {DllFile}", dllFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to scan assembly for workflows from package: {DllFile}", dllFile);
+                    }
+                }
+            }
+            
+            // Cleanup extracted files
+            try
+            {
+                Directory.Delete(extractPath, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cleanup extracted package: {ExtractPath}", extractPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading workflows from package: {PackagePath}", packagePath);
+        }
+        
+        return workflows;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         
         _packageWatcher?.Dispose();
+        _feedWatcher?.Dispose();
         UnloadPreviousContexts();
         
         _disposed = true;

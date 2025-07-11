@@ -200,10 +200,29 @@ MyTemporalPackage/
 The worker supports dynamic loading of both activities and workflows with safe restart mechanisms:
 
 ### Hot Reload Features
-1. **Detects** new packages in NuGet cache directories
-2. **Unloads** old assemblies using collectible load contexts
-3. **Loads** new assemblies with updated activities and workflows
-4. **Restarts** the worker gracefully with new components
+1. **Detects** new packages via file system monitoring or Artifactory feed polling
+2. **Downloads** packages automatically from Artifactory feeds (when using feed mode)
+3. **Extracts** and processes .nupkg files to discover activities and workflows
+4. **Unloads** old assemblies using collectible load contexts
+5. **Loads** new assemblies with updated activities and workflows
+6. **Restarts** the worker gracefully with new components
+
+### Feed Monitoring vs File System Monitoring
+
+#### Artifactory Feed Monitoring Benefits:
+- ✅ **Network-aware**: Works with remote Artifactory instances
+- ✅ **More reliable**: No dependency on file system notifications
+- ✅ **Metadata-rich**: Access to package metadata, versions, and dependencies
+- ✅ **Atomic**: Only loads complete packages, not partial files
+- ✅ **Authentication**: Built-in support for Artifactory authentication
+- ✅ **Filtering**: Monitor specific packages or patterns
+- ✅ **Version management**: Automatic handling of package versions
+
+#### File System Monitoring Benefits:
+- ✅ **Lower latency**: Immediate detection of file changes
+- ✅ **No network dependency**: Works offline
+- ✅ **Broader scope**: Can monitor any directory structure
+- ✅ **Legacy compatibility**: Works with existing NuGet workflows
 
 ### Architecture Components
 - **PackageWatcher**: Monitors NuGet cache directories for .dll changes
@@ -221,7 +240,28 @@ The worker supports dynamic loading of both activities and workflows with safe r
 
 ### Configuration
 - Set `HOT_RELOAD_ENABLED=false` to disable hot reload and use traditional mode
+- Set `HOT_RELOAD_MODE=ArtifactoryFeed` to monitor Artifactory feeds instead of file system
+- Set `HOT_RELOAD_MODE=FileSystem` for traditional file system monitoring (default)
+- Set `HOT_RELOAD_MODE=Both` for hybrid monitoring (prioritizes Artifactory feed)
 - Graceful restart is always enabled for worker safety
+
+#### Artifactory Feed Monitoring
+```bash
+# Enable feed monitoring
+HOT_RELOAD_MODE=ArtifactoryFeed
+ARTIFACTORY_FEED_URL=http://artifactory:8082/artifactory/api/nuget/v3/nuget
+ARTIFACTORY_POLL_INTERVAL_SECONDS=30
+ARTIFACTORY_PACKAGE_FILTERS=TemporalActivities,MyWorkflows
+```
+
+#### File System Monitoring (Default)
+```bash
+# Enable file system monitoring  
+HOT_RELOAD_MODE=FileSystem
+HOT_RELOAD_WATCH_PATHS=/home/user/.nuget/packages,/tmp/packages
+HOT_RELOAD_FILE_FILTER=*.dll
+HOT_RELOAD_DEBOUNCE_MS=1000
+```
 
 ### Testing
 Run the comprehensive test suite:
@@ -247,6 +287,14 @@ Run the comprehensive test suite:
 | `ARTIFACTORY_USERNAME` | JFrog username | `admin` |
 | `ARTIFACTORY_PASSWORD` | JFrog password/API key | `password` |
 | `HOT_RELOAD_ENABLED` | Enable hot reload functionality | `true` |
+| `HOT_RELOAD_MODE` | Hot reload mode: `FileSystem`, `ArtifactoryFeed`, `Both` | `FileSystem` |
+| `ARTIFACTORY_FEED_URL` | Artifactory NuGet feed URL for monitoring | - |
+| `ARTIFACTORY_POLL_INTERVAL_SECONDS` | Feed polling interval | `30` |
+| `ARTIFACTORY_PACKAGE_FILTERS` | Comma-separated package filters | - |
+| `ARTIFACTORY_DOWNLOAD_PATH` | Download path for feed packages | `/tmp/TemporalWorker/FeedPackages` |
+| `HOT_RELOAD_WATCH_PATHS` | File system paths to monitor | System NuGet cache |
+| `HOT_RELOAD_FILE_FILTER` | File filter for monitoring | `*.dll` |
+| `HOT_RELOAD_DEBOUNCE_MS` | Debounce delay for file changes | `1000` |
 
 ## Services
 
