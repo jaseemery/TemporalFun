@@ -1,54 +1,50 @@
-FROM mcr.microsoft.com/dotnet/runtime:9.0 AS base
+# Use the official .NET 9 runtime as base image
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 WORKDIR /app
 
 # Create non-root user for security
 RUN groupadd -r temporal && useradd -r -g temporal temporal
-RUN chown -R temporal:temporal /app
 
+# Use the .NET 9 SDK for building
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Copy build-time NuGet.Config (uses only nuget.org)
-COPY ["NuGet.Config.build", "./NuGet.Config"]
-
-# Copy project file
+# Copy csproj file and restore dependencies
 COPY ["TemporalWorker.csproj", "."]
+RUN dotnet restore "TemporalWorker.csproj"
 
-# Restore packages from NuGet.org only during build
-RUN dotnet restore "./TemporalWorker.csproj"
-
-# Copy source code
+# Copy all source files
 COPY . .
-WORKDIR "/src/."
 
 # Build the application
 RUN dotnet build "TemporalWorker.csproj" -c Release -o /app/build
 
+# Publish the application
 FROM build AS publish
 RUN dotnet publish "TemporalWorker.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
+# Final stage - runtime image
 FROM base AS final
 WORKDIR /app
+
+# Install curl for healthchecks and netcat for debugging
+RUN apt-get update && apt-get install -y curl netcat-traditional && rm -rf /var/lib/apt/lists/*
+
+# Copy the published application
 COPY --from=publish /app/publish .
 
-# Copy runtime NuGet.Config (includes Artifactory)
-COPY ["NuGet.Config.runtime", "./NuGet.Config"]
+# Create directory for downloaded packages and set permissions
+RUN mkdir -p /tmp/TemporalWorker/FeedPackages && \
+    chown -R temporal:temporal /app /tmp/TemporalWorker
 
-# Environment variables for Temporal configuration
-ENV TEMPORAL_SERVER=localhost:7233
+# Set environment variables for containerized environment
+ENV TEMPORAL_SERVER=temporal:7233
 ENV TASK_QUEUE=default
-
-# Set environment variables for Artifactory credentials
-ARG ARTIFACTORY_USERNAME
-ARG ARTIFACTORY_PASSWORD
-ENV ARTIFACTORY_USERNAME=$ARTIFACTORY_USERNAME
-ENV ARTIFACTORY_PASSWORD=$ARTIFACTORY_PASSWORD
+ENV HOT_RELOAD_ENABLED=true
+ENV HOT_RELOAD_MODE=FileSystem
 
 # Switch to non-root user
 USER temporal
 
-# Add health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8085/health || exit 1
-
+# Set the entry point
 ENTRYPOINT ["dotnet", "TemporalWorker.dll"]

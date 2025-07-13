@@ -1,50 +1,6 @@
-version: '3.8'
-
 services:
-  temporal-worker:
-    build:
-      context: .
-      args:
-        - ARTIFACTORY_USERNAME=${ARTIFACTORY_USERNAME}
-        - ARTIFACTORY_PASSWORD=${ARTIFACTORY_PASSWORD}
-    container_name: temporal-worker
-    environment:
-      - TEMPORAL_SERVER=temporal:7233
-      - TASK_QUEUE=default
-      - ASPNETCORE_ENVIRONMENT=Production
-      - HOT_RELOAD_ENABLED=true
-    depends_on:
-      - temporal
-      - artifactory
-    networks:
-      - temporal-network
-    restart: unless-stopped
-
-  temporal:
-    image: temporalio/auto-setup:1.23.0
-    container_name: temporal-server
-    ports:
-      - "7233:7233"
-      - "8233:8233"
-    environment:
-      - DB=postgresql
-      - DB_PORT=5432
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=postgresql
-    depends_on:
-      postgresql:
-        condition: service_healthy
-    networks:
-      - temporal-network
-    healthcheck:
-      test: ["CMD", "tctl", "--address", "localhost:7233", "namespace", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
-  postgresql:
+  # PostgreSQL database for Temporal
+  temporal-db:
     image: postgres:13
     container_name: temporal-postgresql
     environment:
@@ -53,82 +9,84 @@ services:
       POSTGRES_DB: temporal
     ports:
       - "5432:5432"
-    networks:
-      - temporal-network
     volumes:
-      - postgresql-data:/var/lib/postgresql/data
+      - temporal_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  temporal-ui:
-    image: temporalio/ui:2.27.2
-    container_name: temporal-ui
-    ports:
-      - "8080:8080"
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.22.0
+    container_name: temporal-server
     depends_on:
-      - temporal
-    networks:
-      - temporal-network
-
-  artifactory:
-    image: releases-docker.jfrog.io/jfrog/artifactory-oss:latest
-    container_name: artifactory
-    ports:
-      - "8082:8082"
-      - "8081:8081"
-    environment:
-      - JF_SHARED_DATABASE_TYPE=postgresql
-      - JF_SHARED_DATABASE_USERNAME=artifactory
-      - JF_SHARED_DATABASE_PASSWORD=artifactory
-      - JF_SHARED_DATABASE_URL=jdbc:postgresql://artifactory-db:5432/artifactory
-      - JF_SHARED_DATABASE_DRIVER=org.postgresql.Driver
-    depends_on:
-      artifactory-db:
+      temporal-db:
         condition: service_healthy
-    networks:
-      - temporal-network
-    volumes:
-      - artifactory-data:/var/opt/jfrog/artifactory
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/artifactory/api/system/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
-
-  artifactory-db:
-    image: postgres:13
-    container_name: artifactory-postgresql
     environment:
-      POSTGRES_PASSWORD: artifactory
-      POSTGRES_USER: artifactory
-      POSTGRES_DB: artifactory
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-db
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
     ports:
-      - "5433:5432"
-    networks:
-      - temporal-network
+      - "7233:7233"
     volumes:
-      - artifactory-db-data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U artifactory"]
+      test: ["CMD", "sh", "-c", "temporal operator cluster health --address $$(hostname -i):7233"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-networks:
-  temporal-network:
-    driver: bridge
+  # Temporal Web UI
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+
+  # Temporal Worker
+  temporal-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: temporal-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      # Temporal connection
+      - TEMPORAL_SERVER=temporal:7233
+      - TASK_QUEUE=default
+      
+      # Hot reload configuration
+      - HOT_RELOAD_ENABLED=true
+      - HOT_RELOAD_MODE=FileSystem
+      
+      # Artifactory configuration (for feed monitoring)
+      # Uncomment and set these to use Artifactory feed monitoring:
+      # - HOT_RELOAD_MODE=ArtifactoryFeed
+      # - ARTIFACTORY_FEED_URL=https://your-artifactory.com/artifactory/api/nuget/v3/nuget-repo
+      # - ARTIFACTORY_USERNAME=your-username
+      # - ARTIFACTORY_PASSWORD=your-api-key
+      # - ARTIFACTORY_POLL_INTERVAL_SECONDS=30
+      # - ARTIFACTORY_PACKAGE_FILTERS=TemporalActivities,MyWorkflows
+    volumes:
+      # Mount a volume for package downloads when using feed monitoring
+      - worker_packages:/tmp/TemporalWorker/FeedPackages
+      # Optional: Mount host directory for file system monitoring
+      # - ~/.nuget/packages:/home/temporal/.nuget/packages:ro
+    restart: unless-stopped
 
 volumes:
-  postgresql-data:
-  temporal-data:
-  artifactory-data:
-  artifactory-db-data:
+  temporal_db_data:
+  worker_packages:

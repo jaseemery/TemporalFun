@@ -1,0 +1,34 @@
+# Development dynamic configuration for SQL backend
+# This file provides the minimal configuration needed for local development
+
+# System limits
+limit.maxIDLength:
+  - value: 1000
+
+# Visibility settings
+visibility.enableManualInitialization:
+  - value: false
+
+# Persistence settings  
+persistence.defaultStoreType:
+  - value: "sql"
+
+# Frontend settings
+frontend.enableNamespaceNotActiveAutoForwarding:
+  - value: true
+
+# History settings
+history.defaultActivityRetryPolicy:
+  - value:
+      InitialInterval: "1s"
+      BackoffCoefficient: 2.0
+      MaximumInterval: "100s"
+      MaximumAttempts: 3
+
+# Worker settings
+worker.replicatorConcurrency:
+  - value: 1000
+
+# Enable development mode features
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true

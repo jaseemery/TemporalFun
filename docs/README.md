@@ -1,93 +1,152 @@
-# Temporal Worker with JFrog Artifactory Integration
+# Temporal Worker with Artifactory Feed Monitoring
 
-This Temporal worker dynamically loads activities from NuGet packages hosted on a local JFrog Artifactory instance that runs as part of the Docker Compose stack.
+A Temporal worker that dynamically loads activities and workflows from NuGet packages by monitoring Artifactory feeds. This approach lets you update your worker's behavior without deploying new code or restarting services.
 
 ## Features
 
-- **🔥 Hot Reload**: Automatically detects new packages and reloads without worker restart
-- **🛡️ Graceful Restart**: Safe worker restarts with proper resource cleanup and timeout handling
-- **🔄 Workflow Hot Reload**: Dynamic loading of Temporal workflows from NuGet packages
-- **⚡ Activity Hot Reload**: Dynamic loading of Temporal activities from NuGet packages
-- **🧪 Comprehensive Testing**: Full test suite with unit, integration, and hot reload tests
-- **Local JFrog Artifactory**: Complete Artifactory instance running in Docker
-- **Automated Setup**: Scripts to configure repositories and upload sample packages
+- **Hot Reload**: Automatically detects new packages and reloads them without restarting the worker
+- **Graceful Restart**: Safe worker restarts with proper resource cleanup and timeout handling
+- **Workflow Hot Reload**: Dynamic loading of Temporal workflows from NuGet packages
+- **Activity Hot Reload**: Dynamic loading of Temporal activities from NuGet packages
+- **Comprehensive Testing**: Full test suite with unit, integration, and hot reload tests
+- **Artifactory Feed Monitoring**: Monitor NuGet feeds for package updates
+- **File System Monitoring**: Watch local NuGet cache directories for changes
+- **Authentication Support**: Built-in support for Artifactory authentication
+- **Package Filtering**: Monitor specific packages or patterns
 - **Fallback Support**: Uses local activities if no external packages are found
-- **Sample Package**: Includes a sample activity package for testing
-- **File System Monitoring**: Watches NuGet cache and package directories for changes
 
 ## Quick Start
 
-### 1. Set up Environment
+You have three ways to run this worker depending on your setup:
+
+### Option 1: Use with existing Temporal Server
+
+If you already have a Temporal server running somewhere, this is the simplest approach.
+
+#### 1. Set up Environment
 ```bash
 cp .env.example .env
 ```
-The default credentials work with the local Artifactory instance.
 
-### 2. Start All Services
+#### 2. Configure for your Artifactory instance
+Update `.env` with your Artifactory details:
 ```bash
-docker compose up --build
+HOT_RELOAD_MODE=ArtifactoryFeed
+ARTIFACTORY_FEED_URL=https://your-company.jfrog.io/artifactory/api/nuget/v3/your-repo
+ARTIFACTORY_USERNAME=your-username
+ARTIFACTORY_PASSWORD=your-api-key
+TEMPORAL_SERVER=your-temporal-server:7233
 ```
 
-This will start:
-- **Temporal Worker** (connects to Artifactory for packages)
+#### 3. Build and Run
+```bash
+dotnet build
+dotnet run
+```
+
+### Option 2: Local Development with Docker (Fully Containerized)
+
+If you want to run everything in containers, this option runs both Temporal services and the worker in Docker.
+
+#### 1. Start All Services
+```bash
+docker compose up -d
+```
+
+This starts:
 - **Temporal Server** (port 7233)
-- **Temporal UI** (port 8080)
+- **Temporal UI** (port 8080) 
 - **PostgreSQL** (port 5432)
-- **Artifactory** (port 8082)
-- **Artifactory Database** (port 5433)
+- **Temporal Worker** (containerized)
 
-### 3. Configure Artifactory (First Time Only)
-After all services are running, set up the NuGet repository:
-```bash
-./scripts/setup-artifactory.sh
+#### 2. Configure Artifactory (Optional)
+If you want to use Artifactory feed monitoring instead of file system monitoring, you can update the environment variables in the docker-compose.yml file:
+
+```yaml
+environment:
+  - HOT_RELOAD_MODE=ArtifactoryFeed
+  - ARTIFACTORY_FEED_URL=https://your-company.jfrog.io/artifactory/api/nuget/v3/your-repo
+  - ARTIFACTORY_USERNAME=your-username
+  - ARTIFACTORY_PASSWORD=your-api-key
 ```
 
-### 4. Upload Sample Package
-Build and upload the sample activity package:
+The worker runs in file system monitoring mode by default, which works well for development since it can detect changes to the application code inside the container.
+
+### Option 3: Mixed Development (Docker Services + Local Worker)
+
+If you want to run Temporal services in Docker but develop the worker locally for easier debugging:
+
+#### 1. Start Temporal Services Only
 ```bash
-cd sample-packages
-./build-and-upload.sh
+# Start only the infrastructure services
+docker compose up temporal-db temporal temporal-ui -d
 ```
 
-### 5. Watch Hot Reload in Action
-The worker automatically detects new packages and reloads them without restart! Upload new packages and watch the logs:
+#### 2. Run Worker Locally
 ```bash
-docker compose logs -f temporal-worker
+cp .env.example .env
+# Set TEMPORAL_SERVER=localhost:7233 in .env
+dotnet build
+dotnet run
 ```
 
-To manually restart if needed:
+This approach gives you the convenience of containerized Temporal services while allowing you to debug and modify the worker code directly on your machine.
+
+## Service URLs (Local Development)
+
+| Service | URL |
+|---------|-----|
+| Temporal UI | http://localhost:8080 |
+| Temporal Server | localhost:7233 |
+
+## Feed Monitoring vs File System Monitoring
+
+You have two options for how the worker detects new packages. Most people will want feed monitoring, but file system monitoring can be useful in some scenarios.
+
+### Artifactory Feed Monitoring (Recommended)
+
+This approach polls your Artifactory NuGet feed directly for package updates:
+
 ```bash
-docker compose restart temporal-worker
+# Enable feed monitoring
+HOT_RELOAD_MODE=ArtifactoryFeed
+ARTIFACTORY_FEED_URL=https://your-artifactory.com/artifactory/api/nuget/v3/nuget-repo
+ARTIFACTORY_POLL_INTERVAL_SECONDS=30
+ARTIFACTORY_PACKAGE_FILTERS=TemporalActivities,MyWorkflows
+ARTIFACTORY_USERNAME=your-username
+ARTIFACTORY_PASSWORD=your-api-key
 ```
 
-## Service URLs
+**Benefits:**
+- Works with remote Artifactory instances
+- More reliable than file system notifications
+- Access to package metadata, versions, and dependencies
+- Only loads complete packages, not partial files
+- Built-in support for Artifactory authentication
+- Monitor specific packages or patterns
+- Automatic handling of package versions
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Artifactory UI | http://localhost:8082 | admin/password |
-| Temporal UI | http://localhost:8080 | - |
-| Temporal Server | localhost:7233 | - |
+### File System Monitoring
 
-## Sample Activities & Workflows
+This approach watches local NuGet cache directories for changes:
 
-The included sample package (`TemporalActivities.Sample`) provides these activities:
-- `ProcessOrder` - Process customer orders
-- `ValidatePayment` - Validate payment tokens
-- `SendNotification` - Send notifications
-- `GenerateReport` - Generate business reports
+```bash
+# Enable file system monitoring  
+HOT_RELOAD_MODE=FileSystem
+HOT_RELOAD_WATCH_PATHS=/home/user/.nuget/packages,/tmp/packages
+HOT_RELOAD_FILE_FILTER=*.dll
+HOT_RELOAD_DEBOUNCE_MS=1000
+```
 
-Sample workflows available for hot reload:
-- `OrderProcessingWorkflow` - Complete order processing workflow
-- `UserOnboardingWorkflow` - User registration and onboarding
-- `SimpleWorkflow` - Basic workflow for testing
+**Benefits:**
+- Immediate detection of file changes
+- No network dependency - works offline
+- Can monitor any directory structure
+- Works with existing NuGet workflows
 
-## Creating Your Own Activity & Workflow Packages
+## Creating Activity & Workflow Packages
 
-1. Create a new .NET class library project
-2. Add reference to `Temporalio` NuGet package
-3. Create activities and workflows with proper attributes
-4. Build and pack: `dotnet pack -c Release`
-5. Upload to Artifactory via UI or API
+The worker can load any .NET class library that contains properly attributed Temporal activities or workflows.
 
 ### Example Activity
 ```csharp
@@ -128,20 +187,52 @@ public class MyWorkflow
 }
 ```
 
-## Advanced Configuration
+### Building and Publishing
+1. Create a new .NET class library project
+2. Add reference to `Temporalio` NuGet package
+3. Create activities and workflows with proper attributes
+4. Build and pack: `dotnet pack -c Release`
+5. Upload to Artifactory via UI, CLI, or API
 
-### Custom Artifactory URL
-Update `NuGet.Config` to point to your external Artifactory:
-```xml
-<add key="Artifactory" value="https://your-company.jfrog.io/artifactory/api/nuget/v3/nuget-repo" />
-```
+## Architecture Components
 
-### Authentication
-Update credentials in `.env`:
-```bash
-ARTIFACTORY_USERNAME=your-username
-ARTIFACTORY_PASSWORD=your-api-key
-```
+The worker is built with several key components that work together:
+
+- **ArtifactoryFeedWatcher**: Monitors Artifactory NuGet feeds for package updates
+- **PackageWatcher**: Monitors NuGet cache directories for .dll changes
+- **HotReloadManager**: Handles assembly loading/unloading with collectible contexts
+- **ActivityLoader**: Dynamically loads and manages Temporal activities
+- **WorkflowLoader**: Dynamically loads and manages Temporal workflows
+- **HotReloadWorkerService**: Manages worker lifecycle with graceful restarts
+
+## Hot Reload Process
+
+When a new package is detected, the worker goes through this process:
+
+1. **Detects** new packages via Artifactory feed polling or file system monitoring
+2. **Downloads** packages automatically from Artifactory feeds (when using feed mode)
+3. **Extracts** and processes .nupkg files to discover activities and workflows
+4. **Unloads** old assemblies using collectible load contexts
+5. **Loads** new assemblies with updated activities and workflows
+6. **Restarts** the worker gracefully with new components
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TEMPORAL_SERVER` | Temporal server address | `localhost:7233` |
+| `TASK_QUEUE` | Task queue name | `default` |
+| `HOT_RELOAD_ENABLED` | Enable hot reload functionality | `true` |
+| `HOT_RELOAD_MODE` | Hot reload mode: `FileSystem`, `ArtifactoryFeed`, `Both` | `FileSystem` |
+| `ARTIFACTORY_FEED_URL` | Artifactory NuGet feed URL for monitoring | - |
+| `ARTIFACTORY_USERNAME` | Artifactory username | - |
+| `ARTIFACTORY_PASSWORD` | Artifactory password/API key | - |
+| `ARTIFACTORY_POLL_INTERVAL_SECONDS` | Feed polling interval | `30` |
+| `ARTIFACTORY_PACKAGE_FILTERS` | Comma-separated package filters | - |
+| `ARTIFACTORY_DOWNLOAD_PATH` | Download path for feed packages | `/tmp/TemporalWorker/FeedPackages` |
+| `HOT_RELOAD_WATCH_PATHS` | File system paths to monitor | System NuGet cache |
+| `HOT_RELOAD_FILE_FILTER` | File filter for monitoring | `*.dll` |
+| `HOT_RELOAD_DEBOUNCE_MS` | Debounce delay for file changes | `1000` |
 
 ## Package Requirements
 
@@ -180,128 +271,45 @@ public class MyBusinessWorkflow
 }
 ```
 
-### Project Structure
-For packages containing both activities and workflows:
-```
-MyTemporalPackage/
-├── Activities/
-│   ├── ProcessingActivities.cs
-│   └── NotificationActivities.cs
-├── Workflows/
-│   ├── OrderWorkflow.cs
-│   └── PaymentWorkflow.cs
-└── Models/
-    ├── Input.cs
-    └── Result.cs
-```
+## Testing
 
-## Hot Reload & Graceful Restart
+The project includes a comprehensive test suite that covers the core functionality:
 
-The worker supports dynamic loading of both activities and workflows with safe restart mechanisms:
-
-### Hot Reload Features
-1. **Detects** new packages via file system monitoring or Artifactory feed polling
-2. **Downloads** packages automatically from Artifactory feeds (when using feed mode)
-3. **Extracts** and processes .nupkg files to discover activities and workflows
-4. **Unloads** old assemblies using collectible load contexts
-5. **Loads** new assemblies with updated activities and workflows
-6. **Restarts** the worker gracefully with new components
-
-### Feed Monitoring vs File System Monitoring
-
-#### Artifactory Feed Monitoring Benefits:
-- ✅ **Network-aware**: Works with remote Artifactory instances
-- ✅ **More reliable**: No dependency on file system notifications
-- ✅ **Metadata-rich**: Access to package metadata, versions, and dependencies
-- ✅ **Atomic**: Only loads complete packages, not partial files
-- ✅ **Authentication**: Built-in support for Artifactory authentication
-- ✅ **Filtering**: Monitor specific packages or patterns
-- ✅ **Version management**: Automatic handling of package versions
-
-#### File System Monitoring Benefits:
-- ✅ **Lower latency**: Immediate detection of file changes
-- ✅ **No network dependency**: Works offline
-- ✅ **Broader scope**: Can monitor any directory structure
-- ✅ **Legacy compatibility**: Works with existing NuGet workflows
-
-### Architecture Components
-- **PackageWatcher**: Monitors NuGet cache directories for .dll changes
-- **HotReloadManager**: Handles assembly loading/unloading with collectible contexts
-- **ActivityLoader**: Dynamically loads and manages Temporal activities
-- **WorkflowLoader**: Dynamically loads and manages Temporal workflows
-- **HotReloadWorkerService**: Manages worker lifecycle with graceful restarts
-
-### Graceful Restart Features
-- **Double Ctrl+C Protection**: First Ctrl+C triggers graceful shutdown, second forces exit
-- **Timeout Handling**: 30-second graceful shutdown timeout with force termination fallback
-- **Resource Cleanup**: Proper disposal of workers, connections, and managed resources
-- **Race Condition Prevention**: Thread-safe restart logic with proper synchronization
-- **Comprehensive Logging**: Detailed logging of restart operations and status
-
-### Configuration
-- Set `HOT_RELOAD_ENABLED=false` to disable hot reload and use traditional mode
-- Set `HOT_RELOAD_MODE=ArtifactoryFeed` to monitor Artifactory feeds instead of file system
-- Set `HOT_RELOAD_MODE=FileSystem` for traditional file system monitoring (default)
-- Set `HOT_RELOAD_MODE=Both` for hybrid monitoring (prioritizes Artifactory feed)
-- Graceful restart is always enabled for worker safety
-
-#### Artifactory Feed Monitoring
-```bash
-# Enable feed monitoring
-HOT_RELOAD_MODE=ArtifactoryFeed
-ARTIFACTORY_FEED_URL=http://artifactory:8082/artifactory/api/nuget/v3/nuget
-ARTIFACTORY_POLL_INTERVAL_SECONDS=30
-ARTIFACTORY_PACKAGE_FILTERS=TemporalActivities,MyWorkflows
-```
-
-#### File System Monitoring (Default)
-```bash
-# Enable file system monitoring  
-HOT_RELOAD_MODE=FileSystem
-HOT_RELOAD_WATCH_PATHS=/home/user/.nuget/packages,/tmp/packages
-HOT_RELOAD_FILE_FILTER=*.dll
-HOT_RELOAD_DEBOUNCE_MS=1000
-```
-
-### Testing
-Run the comprehensive test suite:
 ```bash
 # Run all tests
-./scripts/run-tests.sh
+dotnet test
 
 # Run specific test categories
-./scripts/run-tests.sh unit          # Unit tests only
-./scripts/run-tests.sh integration   # Integration tests only
-./scripts/run-tests.sh workflow      # Workflow tests only
-./scripts/run-tests.sh activity      # Activity tests only
-./scripts/run-tests.sh hotreload     # Hot reload tests only
-./scripts/run-tests.sh coverage      # Tests with coverage report
+dotnet test --filter Category=Unit
+dotnet test --filter Category=Integration
+dotnet test --filter Category=HotReload
 ```
 
-## Environment Variables
+## Docker Management
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TEMPORAL_SERVER` | Temporal server address | `localhost:7233` |
-| `TASK_QUEUE` | Task queue name | `default` |
-| `ARTIFACTORY_USERNAME` | JFrog username | `admin` |
-| `ARTIFACTORY_PASSWORD` | JFrog password/API key | `password` |
-| `HOT_RELOAD_ENABLED` | Enable hot reload functionality | `true` |
-| `HOT_RELOAD_MODE` | Hot reload mode: `FileSystem`, `ArtifactoryFeed`, `Both` | `FileSystem` |
-| `ARTIFACTORY_FEED_URL` | Artifactory NuGet feed URL for monitoring | - |
-| `ARTIFACTORY_POLL_INTERVAL_SECONDS` | Feed polling interval | `30` |
-| `ARTIFACTORY_PACKAGE_FILTERS` | Comma-separated package filters | - |
-| `ARTIFACTORY_DOWNLOAD_PATH` | Download path for feed packages | `/tmp/TemporalWorker/FeedPackages` |
-| `HOT_RELOAD_WATCH_PATHS` | File system paths to monitor | System NuGet cache |
-| `HOT_RELOAD_FILE_FILTER` | File filter for monitoring | `*.dll` |
-| `HOT_RELOAD_DEBOUNCE_MS` | Debounce delay for file changes | `1000` |
+When using the Docker setup, here are some useful commands:
 
-## Services
+```bash
+# Start all services
+docker compose up -d
 
-- **Temporal Worker**: Main application (port varies)
-- **Temporal Server**: Core Temporal service (port 7233)
-- **Temporal UI**: Web interface (port 8080)
-- **PostgreSQL**: Database backend (port 5432)
+# View logs for all services
+docker compose logs
+
+# View logs for specific service
+docker compose logs temporal-worker
+
+# Stop all services
+docker compose down
+
+# Rebuild and restart worker (after code changes)
+docker compose up --build temporal-worker -d
+
+# Start only infrastructure (no worker)
+docker compose up temporal-db temporal temporal-ui -d
+```
+
+The worker container automatically restarts if it crashes, and includes health monitoring. If you're developing the worker code, you might prefer Option 3 (mixed development) for easier debugging.
 
 ## Troubleshooting
 
@@ -312,8 +320,8 @@ Run the comprehensive test suite:
 
 ### Package Not Found
 - Verify package exists in Artifactory
-- Check package version in `.csproj`
-- Ensure package source is correctly configured in `NuGet.Config`
+- Check package version and availability
+- Ensure feed URL is correctly configured
 
 ### Activity Not Loading
 - Verify activity methods have `[Activity]` attribute
@@ -327,13 +335,14 @@ Run the comprehensive test suite:
 - Review logs for assembly loading errors
 
 ### Hot Reload Issues
-- Check file system permissions on NuGet cache directories
-- Verify HOT_RELOAD_ENABLED environment variable is set to `true`
+- Check network connectivity to Artifactory
+- Verify authentication credentials
 - Review HotReloadWorkerService logs for restart errors
 - Ensure package assemblies are not locked by other processes
 
-### Test Failures
-- Run tests individually to isolate issues: `./scripts/run-tests.sh unit`
-- Check test logs for specific error details
-- Verify all dependencies are properly restored: `dotnet restore tests/`
-- Ensure no processes are locking test assemblies
+### Docker Issues
+- If containers fail to start, check logs with `docker compose logs <service-name>`
+- Ensure Docker has enough memory allocated (Temporal can be resource-intensive)
+- If the worker can't connect to Temporal, verify all services are healthy with `docker compose ps`
+- For permission issues on mounted volumes, check that Docker has access to the project directory
+- If health checks fail, wait a few minutes for services to fully initialize
