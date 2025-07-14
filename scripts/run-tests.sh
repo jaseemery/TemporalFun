@@ -78,13 +78,6 @@ run_activity_tests() {
         --logger "console;verbosity=normal"
 }
 
-run_hotreload_tests() {
-    echo -e "${BLUE}🔥 Running hot reload tests...${NC}"
-    
-    dotnet test "$TEST_PROJECT_DIR" \
-        --filter "ClassName~HotReload" \
-        --logger "console;verbosity=normal"
-}
 
 # Function to generate coverage report
 generate_coverage_report() {
@@ -185,9 +178,6 @@ main() {
         "activity")
             build_tests && run_activity_tests
             ;;
-        "hotreload")
-            build_tests && run_hotreload_tests
-            ;;
         "coverage")
             build_tests && run_tests_with_coverage && generate_coverage_report
             ;;
@@ -219,7 +209,6 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "  integration Run integration tests only"
     echo "  workflow    Run workflow-related tests"
     echo "  activity    Run activity-related tests"
-    echo "  hotreload   Run hot reload tests"
     echo "  coverage    Run tests with coverage report"
     echo "  build       Build test project"
     echo "  restore     Restore test dependencies"

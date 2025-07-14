@@ -1,5 +1,5 @@
 services:
-  # PostgreSQL database for Temporal
+  # Shared infrastructure
   temporal-db:
     image: postgres:13
     container_name: temporal-postgresql
@@ -17,7 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Temporal Server
   temporal:
     image: temporalio/auto-setup:1.22.0
     container_name: temporal-server
@@ -41,7 +40,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Temporal Web UI
   temporal-ui:
     image: temporalio/ui:2.21.3
     container_name: temporal-ui
@@ -54,19 +52,66 @@ services:
     ports:
       - "8080:8080"
 
-  # Temporal Worker
-  temporal-worker:
+  # Blue Environment Workers (Live - handling production traffic)
+  temporal-worker-blue-1:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: temporal-worker
+    container_name: temporal-worker-blue-1
     depends_on:
       temporal:
         condition: service_healthy
     environment:
-      # Temporal connection
       - TEMPORAL_SERVER=temporal:7233
-      - TASK_QUEUE=default
+      - TASK_QUEUE=production
+      - ENVIRONMENT=blue
+      - WORKER_IDENTITY=blue-1
+    restart: unless-stopped
+
+  temporal-worker-blue-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: temporal-worker-blue-2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_SERVER=temporal:7233
+      - TASK_QUEUE=production
+      - ENVIRONMENT=blue
+      - WORKER_IDENTITY=blue-2
+    restart: unless-stopped
+
+  # Green Environment Workers (Staging - for testing new deployments)
+  temporal-worker-green-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: temporal-worker-green-1
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_SERVER=temporal:7233
+      - TASK_QUEUE=staging
+      - ENVIRONMENT=green
+      - WORKER_IDENTITY=green-1
+    restart: unless-stopped
+
+  temporal-worker-green-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: temporal-worker-green-2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_SERVER=temporal:7233
+      - TASK_QUEUE=staging
+      - ENVIRONMENT=green
+      - WORKER_IDENTITY=green-2
     restart: unless-stopped
 
 volumes:

@@ -2,11 +2,6 @@ using Temporalio.Client;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using TemporalWorkerApp.Loaders;
-using TemporalWorkerApp.Services;
-using TemporalWorkerApp.Managers;
-using TemporalWorkerApp.Watchers;
-using TemporalWorkerApp.Configuration;
 
 namespace TemporalWorkerApp;
 
@@ -22,11 +17,6 @@ class Program
                     builder.AddConsole();
                     builder.SetMinimumLevel(LogLevel.Information);
                 });
-                
-                // Register services for dependency injection
-                services.AddSingleton<ActivityLoader>();
-                services.AddSingleton<HotReloadWorkerService>();
-                services.AddSingleton<TemporalWorkerApp.Services.HealthCheckService>();
             })
             .Build();
 
@@ -35,197 +25,84 @@ class Program
         // Get configuration
         var temporalServer = Environment.GetEnvironmentVariable("TEMPORAL_SERVER") ?? "localhost:7233";
         var taskQueue = Environment.GetEnvironmentVariable("TASK_QUEUE") ?? "default";
-        var hotReloadEnabled = Environment.GetEnvironmentVariable("HOT_RELOAD_ENABLED")?.ToLowerInvariant() != "false";
+        var environment = Environment.GetEnvironmentVariable("ENVIRONMENT") ?? "unknown";
+        var workerIdentity = Environment.GetEnvironmentVariable("WORKER_IDENTITY") ?? "worker-1";
         
-        logger.LogInformation("Starting Temporal Worker with hot reload: {HotReloadEnabled}", hotReloadEnabled);
-        logger.LogInformation("Connecting to Temporal server: {Server}", temporalServer);
-        
+        logger.LogInformation("Starting Temporal Worker");
+        logger.LogInformation("Environment: {Environment}", environment);
+        logger.LogInformation("Worker Identity: {WorkerIdentity}", workerIdentity);
+        logger.LogInformation("Task Queue: {TaskQueue}", taskQueue);
+        logger.LogInformation("Temporal Server: {Server}", temporalServer);
+
         // Connect to Temporal with retry logic
         var client = await ConnectToTemporalWithRetryAsync(temporalServer, logger);
-
         logger.LogInformation("Connected to Temporal server successfully");
 
-        if (hotReloadEnabled)
+        // Load activities from local assemblies
+        var activities = new Delegate[]
         {
-            // Use hot reload service
-            logger.LogInformation("Starting worker with hot reload capability...");
-            
-            var activityLoader = new ActivityLoader(
-                host.Services.GetRequiredService<ILogger<ActivityLoader>>(),
-                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Managers.HotReloadManager>>(),
-                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Watchers.PackageWatcher>>()
-            );
+            TemporalWorkerApp.Activities.EmailActivity.SendEmail,
+            TemporalWorkerApp.Activities.DatabaseActivity.SaveData,
+            TemporalWorkerApp.Activities.DatabaseActivity.GetData
+        };
 
-            var workflowLoader = new WorkflowLoader(
-                host.Services.GetRequiredService<ILogger<WorkflowLoader>>(),
-                activityLoader.HotReloadManager
-            );
-            
-            var workerService = new HotReloadWorkerService(
-                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Services.HotReloadWorkerService>>(),
-                client,
-                taskQueue,
-                activityLoader,
-                workflowLoader
-            );
+        // Load workflows from local assemblies
+        var workflows = new Type[]
+        {
+            typeof(TemporalWorkerApp.Workflows.SimpleWorkflow)
+        };
 
-            // Start health check service
-            var healthCheckService = new TemporalWorkerApp.Services.HealthCheckService(
-                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Services.HealthCheckService>>(),
-                workerService
-            );
-            _ = healthCheckService.StartAsync(CancellationToken.None);
-
-            // Run the hot reload service with graceful shutdown
-            using var cts = new CancellationTokenSource();
-            var shutdownRequested = false;
-            
-            Console.CancelKeyPress += (_, e) =>
-            {
-                if (!shutdownRequested)
-                {
-                    shutdownRequested = true;
-                    e.Cancel = true;
-                    logger.LogInformation("Graceful shutdown requested. Press Ctrl+C again to force exit.");
-                    
-                    Task.Run(() =>
-                    {
-                        try
-                        {
-                            logger.LogInformation("Initiating graceful shutdown...");
-                            cts.Cancel();
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogError(ex, "Error during graceful shutdown");
-                        }
-                    });
-                }
-                else
-                {
-                    logger.LogWarning("Force exit requested");
-                    Environment.Exit(1);
-                }
-            };
-
-            try
-            {
-                await workerService.StartAsync(cts.Token);
-                await Task.Delay(Timeout.Infinite, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                logger.LogInformation("Application is shutting down gracefully...");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Unexpected error during application execution");
-                throw;
-            }
-            finally
-            {
-                logger.LogInformation("Performing cleanup...");
-                try
-                {
-                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                    await workerService.StopAsync(timeoutCts.Token);
-                    await healthCheckService.StopAsync(timeoutCts.Token);
-                    activityLoader.Dispose();
-                    logger.LogInformation("Cleanup completed successfully");
-                }
-                catch (OperationCanceledException)
-                {
-                    logger.LogWarning("Cleanup timed out after 30 seconds");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error during cleanup");
-                }
-            }
+        var workerOptions = new Temporalio.Worker.TemporalWorkerOptions(taskQueue);
+        
+        foreach (var activity in activities)
+        {
+            workerOptions.AddActivity(activity);
         }
-        else
+        
+        foreach (var workflow in workflows)
         {
-            // Traditional mode without hot reload
-            logger.LogInformation("Starting worker in traditional mode (no hot reload)...");
-            
-            // Start health check service for traditional mode too
-            var healthCheckService = new TemporalWorkerApp.Services.HealthCheckService(
-                host.Services.GetRequiredService<ILogger<TemporalWorkerApp.Services.HealthCheckService>>(),
-                null // No hot reload worker service in traditional mode
-            );
-            _ = healthCheckService.StartAsync(CancellationToken.None);
-            
-            var activities = ActivityLoader.LoadActivitiesFromAssemblies(logger);
-            var activityList = activities.ToList();
-            
-            if (!activityList.Any())
-            {
-                logger.LogWarning("No activities found from NuGet packages, using local activities");
-                activityList.AddRange(new Delegate[]
-                {
-                    TemporalWorkerApp.Activities.EmailActivity.SendEmail,
-                    TemporalWorkerApp.Activities.DatabaseActivity.SaveData,
-                    TemporalWorkerApp.Activities.DatabaseActivity.GetData
-                });
-            }
+            workerOptions.AddWorkflow(workflow);
+        }
 
-            var workerOptions = new Temporalio.Worker.TemporalWorkerOptions(taskQueue);
-            
-            foreach (var activity in activityList)
-            {
-                workerOptions.AddActivity(activity);
-            }
-            
-            using var worker = new Temporalio.Worker.TemporalWorker(client, workerOptions);
-            using var cts = new CancellationTokenSource();
-            var shutdownRequested = false;
+        using var worker = new Temporalio.Worker.TemporalWorker(client, workerOptions);
+        using var cts = new CancellationTokenSource();
+        var shutdownRequested = false;
 
-            Console.CancelKeyPress += (_, e) =>
+        Console.CancelKeyPress += (_, e) =>
+        {
+            if (!shutdownRequested)
             {
-                if (!shutdownRequested)
-                {
-                    shutdownRequested = true;
-                    e.Cancel = true;
-                    logger.LogInformation("Graceful shutdown requested. Press Ctrl+C again to force exit.");
-                    cts.Cancel();
-                }
-                else
-                {
-                    logger.LogWarning("Force exit requested");
-                    Environment.Exit(1);
-                }
-            };
+                shutdownRequested = true;
+                e.Cancel = true;
+                logger.LogInformation("Graceful shutdown requested. Press Ctrl+C again to force exit.");
+                cts.Cancel();
+            }
+            else
+            {
+                logger.LogWarning("Force exit requested");
+                Environment.Exit(1);
+            }
+        };
 
-            logger.LogInformation("Starting Temporal worker on task queue: {TaskQueue} with {ActivityCount} activities", 
-                taskQueue, activityList.Count);
-            
-            try
-            {
-                await worker.ExecuteAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                logger.LogInformation("Worker execution cancelled gracefully");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error in worker execution");
-                throw;
-            }
-            finally
-            {
-                logger.LogInformation("Worker shutdown completed");
-                
-                // Cleanup health check service in traditional mode
-                try
-                {
-                    await healthCheckService.StopAsync(CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error stopping health check service");
-                }
-            }
+        logger.LogInformation("Starting Temporal worker with {ActivityCount} activities and {WorkflowCount} workflows on task queue: {TaskQueue}", 
+            activities.Length, workflows.Length, taskQueue);
+        
+        try
+        {
+            await worker.ExecuteAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Worker execution cancelled gracefully");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in worker execution");
+            throw;
+        }
+        finally
+        {
+            logger.LogInformation("Worker shutdown completed");
         }
     }
 

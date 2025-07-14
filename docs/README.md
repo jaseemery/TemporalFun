@@ -1,41 +1,34 @@
-# Temporal Worker with Artifactory Feed Monitoring
+# Temporal Worker with Blue/Green Deployment
 
-A Temporal worker that dynamically loads activities and workflows from NuGet packages by monitoring Artifactory feeds. This approach lets you update your worker's behavior without deploying new code or restarting services.
+A Temporal worker application with built-in blue/green deployment capabilities for zero-downtime updates. This system uses Temporal's native task queue functionality to route traffic between two identical environments (blue and green).
 
 ## Features
 
-- **Hot Reload**: Automatically detects new packages and reloads them without restarting the worker
-- **Graceful Restart**: Safe worker restarts with proper resource cleanup and timeout handling
-- **Workflow Hot Reload**: Dynamic loading of Temporal workflows from NuGet packages
-- **Activity Hot Reload**: Dynamic loading of Temporal activities from NuGet packages
-- **Comprehensive Testing**: Full test suite with unit, integration, and hot reload tests
-- **Artifactory Feed Monitoring**: Monitor NuGet feeds for package updates
-- **File System Monitoring**: Watch local NuGet cache directories for changes
-- **Authentication Support**: Built-in support for Artifactory authentication
-- **Package Filtering**: Monitor specific packages or patterns
-- **Fallback Support**: Uses local activities if no external packages are found
+- **Zero Downtime Deployments**: Switch traffic instantly between active and standby environments
+- **Task Queue Based**: Uses Temporal's built-in task queue load balancing
+- **Easy Rollback**: Switch back to previous environment in seconds
+- **Container Ready**: Fully containerized with Docker Compose
+- **Health Checks**: Built-in health monitoring and dependency checks
+- **Simple Management**: Script-based deployment management
 
 ## Quick Start
 
-You have three ways to run this worker depending on your setup:
-
 ### Option 1: Use with existing Temporal Server
 
-If you already have a Temporal server running somewhere, this is the simplest approach.
+If you already have a Temporal server running somewhere:
 
 #### 1. Set up Environment
 ```bash
 cp .env.example .env
 ```
 
-#### 2. Configure for your Artifactory instance
-Update `.env` with your Artifactory details:
+#### 2. Configure for your Temporal server
+Update `.env` with your server details:
 ```bash
-HOT_RELOAD_MODE=ArtifactoryFeed
-ARTIFACTORY_FEED_URL=https://your-company.jfrog.io/artifactory/api/nuget/v3/your-repo
-ARTIFACTORY_USERNAME=your-username
-ARTIFACTORY_PASSWORD=your-api-key
 TEMPORAL_SERVER=your-temporal-server:7233
+TASK_QUEUE=default
+ENVIRONMENT=blue
+WORKER_IDENTITY=worker-1
 ```
 
 #### 3. Build and Run
@@ -44,9 +37,9 @@ dotnet build
 dotnet run
 ```
 
-### Option 2: Local Development with Docker (Fully Containerized)
+### Option 2: Local Development with Docker
 
-If you want to run everything in containers, this option runs both Temporal services and the worker in Docker.
+If you want to run everything in containers:
 
 #### 1. Start All Services
 ```bash
@@ -59,22 +52,9 @@ This starts:
 - **PostgreSQL** (port 5432)
 - **Temporal Worker** (containerized)
 
-#### 2. Configure Artifactory (Optional)
-If you want to use Artifactory feed monitoring instead of file system monitoring, you can update the environment variables in the docker-compose.yml file:
+### Option 3: Mixed Development
 
-```yaml
-environment:
-  - HOT_RELOAD_MODE=ArtifactoryFeed
-  - ARTIFACTORY_FEED_URL=https://your-company.jfrog.io/artifactory/api/nuget/v3/your-repo
-  - ARTIFACTORY_USERNAME=your-username
-  - ARTIFACTORY_PASSWORD=your-api-key
-```
-
-The worker runs in file system monitoring mode by default, which works well for development since it can detect changes to the application code inside the container.
-
-### Option 3: Mixed Development (Docker Services + Local Worker)
-
-If you want to run Temporal services in Docker but develop the worker locally for easier debugging:
+If you want to run Temporal services in Docker but develop the worker locally:
 
 #### 1. Start Temporal Services Only
 ```bash
@@ -90,8 +70,6 @@ dotnet build
 dotnet run
 ```
 
-This approach gives you the convenience of containerized Temporal services while allowing you to debug and modify the worker code directly on your machine.
-
 ## Service URLs (Local Development)
 
 | Service | URL |
@@ -99,190 +77,128 @@ This approach gives you the convenience of containerized Temporal services while
 | Temporal UI | http://localhost:8080 |
 | Temporal Server | localhost:7233 |
 
-## Feed Monitoring vs File System Monitoring
+## Blue/Green Deployments
 
-You have two options for how the worker detects new packages. Most people will want feed monitoring, but file system monitoring can be useful in some scenarios.
+The project includes a task queue-based blue/green deployment system that uses Temporal's native functionality to route traffic between environments.
 
-### Artifactory Feed Monitoring (Recommended)
+### How It Works
 
-This approach polls your Artifactory NuGet feed directly for package updates:
+- **Blue Environment**: Two worker containers listening to either `production` or `staging` task queue
+- **Green Environment**: Two worker containers listening to either `production` or `staging` task queue  
+- **Traffic Routing**: Workflows are started on either the `production` queue (live) or `staging` queue (testing)
+- **Zero Downtime**: Switch traffic by changing which environment listens to the `production` queue
 
-```bash
-# Enable feed monitoring
-HOT_RELOAD_MODE=ArtifactoryFeed
-ARTIFACTORY_FEED_URL=https://your-artifactory.com/artifactory/api/nuget/v3/nuget-repo
-ARTIFACTORY_POLL_INTERVAL_SECONDS=30
-ARTIFACTORY_PACKAGE_FILTERS=TemporalActivities,MyWorkflows
-ARTIFACTORY_USERNAME=your-username
-ARTIFACTORY_PASSWORD=your-api-key
-```
-
-**Benefits:**
-- Works with remote Artifactory instances
-- More reliable than file system notifications
-- Access to package metadata, versions, and dependencies
-- Only loads complete packages, not partial files
-- Built-in support for Artifactory authentication
-- Monitor specific packages or patterns
-- Automatic handling of package versions
-
-### File System Monitoring
-
-This approach watches local NuGet cache directories for changes:
+### Quick Start
 
 ```bash
-# Enable file system monitoring  
-HOT_RELOAD_MODE=FileSystem
-HOT_RELOAD_WATCH_PATHS=/home/user/.nuget/packages,/tmp/packages
-HOT_RELOAD_FILE_FILTER=*.dll
-HOT_RELOAD_DEBOUNCE_MS=1000
+# Start blue/green infrastructure (blue handling live traffic by default)
+./blue-green-deploy.sh start
+
+# Check current status
+./blue-green-deploy.sh status
+
+# Deploy new version to staging environment
+./blue-green-deploy.sh deploy-to-staging
+
+# Switch traffic to green environment
+./blue-green-deploy.sh switch-to-green
+
+# Switch traffic back to blue environment
+./blue-green-deploy.sh switch-to-blue
+
+# Stop all services
+./blue-green-deploy.sh stop
 ```
 
-**Benefits:**
-- Immediate detection of file changes
-- No network dependency - works offline
-- Can monitor any directory structure
-- Works with existing NuGet workflows
+### Files Used
 
-## Creating Activity & Workflow Packages
+- `docker-compose.blue-green.yml` - Blue/green Docker Compose configuration
+- `blue-green-deploy.sh` - Deployment management script
+- `docker-compose.override.yml` - Generated automatically to control task queue assignments
 
-The worker can load any .NET class library that contains properly attributed Temporal activities or workflows.
+### Deployment Workflow
 
-### Example Activity
+1. **Start with blue live**: Blue environment handles `production` queue, green handles `staging`
+2. **Deploy to staging**: Deploy new version to green environment (while blue stays live)
+3. **Test staging**: Send test workflows to `staging` queue to verify green environment
+4. **Switch traffic**: Move `production` queue to green environment
+5. **Repeat**: Next deployment goes to blue environment (now staging)
+
+### Task Queue Usage in Code
+
 ```csharp
-using Temporalio.Activities;
-
-public static class MyActivities
+// Send workflow to live environment (production queue)
+var workflowOptions = new WorkflowOptions
 {
-    [Activity]
-    public static async Task<string> ProcessData(string input)
-    {
-        var logger = ActivityExecutionContext.Current.Logger;
-        logger.LogInformation("Processing: {Input}", input);
-        
-        await Task.Delay(1000); // Simulate work
-        
-        return "processed: " + input;
-    }
-}
+    Id = "my-workflow",
+    TaskQueue = "production"  // Goes to live environment
+};
+
+// Send workflow to staging environment for testing
+var testOptions = new WorkflowOptions
+{
+    Id = "test-workflow", 
+    TaskQueue = "staging"  // Goes to staging environment
+};
 ```
 
-### Example Workflow
-```csharp
-using Temporalio.Workflows;
+### Benefits
 
-[Workflow("my-workflow")]
-public class MyWorkflow
-{
-    [WorkflowRun]
-    public async Task<string> RunAsync(WorkflowInput input)
-    {
-        // Execute activities
-        var result = await Workflow.ExecuteActivityAsync(
-            () => MyActivities.ProcessData(input.Data),
-            new() { StartToCloseTimeout = TimeSpan.FromMinutes(5) });
-        
-        return result;
-    }
-}
+- **Zero Downtime**: Traffic switches instantly between environments
+- **Easy Rollback**: Switch back to previous environment in seconds
+- **Testing**: Test new deployments in standby before switching traffic
+- **Temporal Native**: Uses Temporal's built-in task queue load balancing
+- **No External Dependencies**: No load balancers or proxies required
+
+### Testing Your Blue/Green Setup
+
+```bash
+# Verify workers are listening to correct queues
+docker compose -f docker-compose.blue-green.yml logs temporal-worker-blue-1 --tail 3
+docker compose -f docker-compose.blue-green.yml logs temporal-worker-green-1 --tail 3
+
+# Check environment variables
+docker compose -f docker-compose.blue-green.yml exec temporal-worker-blue-1 printenv TASK_QUEUE
+docker compose -f docker-compose.blue-green.yml exec temporal-worker-green-1 printenv TASK_QUEUE
+
+# Check detailed worker status
+./blue-green-deploy.sh worker-status
+
+# Run tests to verify system integrity
+cd tests && dotnet test --verbosity minimal
 ```
-
-### Building and Publishing
-1. Create a new .NET class library project
-2. Add reference to `Temporalio` NuGet package
-3. Create activities and workflows with proper attributes
-4. Build and pack: `dotnet pack -c Release`
-5. Upload to Artifactory via UI, CLI, or API
-
-## Architecture Components
-
-The worker is built with several key components that work together:
-
-- **ArtifactoryFeedWatcher**: Monitors Artifactory NuGet feeds for package updates
-- **PackageWatcher**: Monitors NuGet cache directories for .dll changes
-- **HotReloadManager**: Handles assembly loading/unloading with collectible contexts
-- **ActivityLoader**: Dynamically loads and manages Temporal activities
-- **WorkflowLoader**: Dynamically loads and manages Temporal workflows
-- **HotReloadWorkerService**: Manages worker lifecycle with graceful restarts
-
-## Hot Reload Process
-
-When a new package is detected, the worker goes through this process:
-
-1. **Detects** new packages via Artifactory feed polling or file system monitoring
-2. **Downloads** packages automatically from Artifactory feeds (when using feed mode)
-3. **Extracts** and processes .nupkg files to discover activities and workflows
-4. **Unloads** old assemblies using collectible load contexts
-5. **Loads** new assemblies with updated activities and workflows
-6. **Restarts** the worker gracefully with new components
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TEMPORAL_SERVER` | Temporal server address | `localhost:7233` |
-| `TASK_QUEUE` | Task queue name | `default` |
-| `HOT_RELOAD_ENABLED` | Enable hot reload functionality | `true` |
-| `HOT_RELOAD_MODE` | Hot reload mode: `FileSystem`, `ArtifactoryFeed`, `Both` | `FileSystem` |
-| `ARTIFACTORY_FEED_URL` | Artifactory NuGet feed URL for monitoring | - |
-| `ARTIFACTORY_USERNAME` | Artifactory username | - |
-| `ARTIFACTORY_PASSWORD` | Artifactory password/API key | - |
-| `ARTIFACTORY_POLL_INTERVAL_SECONDS` | Feed polling interval | `30` |
-| `ARTIFACTORY_PACKAGE_FILTERS` | Comma-separated package filters | - |
-| `ARTIFACTORY_DOWNLOAD_PATH` | Download path for feed packages | `/tmp/TemporalWorker/FeedPackages` |
-| `HOT_RELOAD_WATCH_PATHS` | File system paths to monitor | System NuGet cache |
-| `HOT_RELOAD_FILE_FILTER` | File filter for monitoring | `*.dll` |
-| `HOT_RELOAD_DEBOUNCE_MS` | Debounce delay for file changes | `1000` |
+| `TASK_QUEUE` | Task queue name (`production` for live, `staging` for testing) | `default` |
+| `ENVIRONMENT` | Environment name (blue/green) for deployments | `unknown` |
+| `WORKER_IDENTITY` | Unique worker identity for active/standby deployments | `worker-1` |
 
-## Package Requirements
+## Built-in Activities and Workflows
 
-### Activity Package Requirements
-Activity packages should contain classes with static methods decorated with `[Activity]` attributes:
+The worker includes sample activities and workflows for demonstration:
 
-```csharp
-using Temporalio.Activities;
+### Activities
+- `EmailActivity.SendEmail` - Simulates sending emails
+- `DatabaseActivity.SaveData` - Simulates saving data to database
+- `DatabaseActivity.GetData` - Simulates retrieving data from database
 
-public static class MyActivities
-{
-    [Activity]
-    public static async Task<string> ProcessData(string input)
-    {
-        // Activity implementation
-        return "processed: " + input;
-    }
-}
-```
-
-### Workflow Package Requirements
-Workflow packages should contain classes decorated with `[Workflow]` attributes and `[WorkflowRun]` methods:
-
-```csharp
-using Temporalio.Workflows;
-
-[Workflow("my-business-workflow")]
-public class MyBusinessWorkflow
-{
-    [WorkflowRun]
-    public async Task<Result> RunAsync(Input input)
-    {
-        // Workflow implementation
-        return new Result();
-    }
-}
-```
+### Workflows
+- `SimpleWorkflow` - Example workflow that coordinates activities
 
 ## Testing
 
-The project includes a comprehensive test suite that covers the core functionality:
+The project includes a test suite that covers the core functionality:
 
 ```bash
 # Run all tests
 dotnet test
 
-# Run specific test categories
-dotnet test --filter Category=Unit
-dotnet test --filter Category=Integration
-dotnet test --filter Category=HotReload
+# Run from tests directory
+cd tests && dotnet test --verbosity minimal
 ```
 
 ## Docker Management
@@ -309,40 +225,42 @@ docker compose up --build temporal-worker -d
 docker compose up temporal-db temporal temporal-ui -d
 ```
 
-The worker container automatically restarts if it crashes, and includes health monitoring. If you're developing the worker code, you might prefer Option 3 (mixed development) for easier debugging.
+## Architecture
+
+The worker is built with these core components:
+
+- **Activities**: Business logic functions that perform specific tasks
+- **Workflows**: Orchestrate activities to implement business processes
+- **Worker Service**: Connects to Temporal and executes activities/workflows
+- **Health Checks**: Monitor worker and Temporal connectivity
+- **Blue/Green System**: Manages zero-downtime deployments
 
 ## Troubleshooting
 
-### Authentication Issues
-- Verify Artifactory credentials in `.env`
-- Check if your API key has package read permissions
-- Ensure the Artifactory URL is correct
+### Worker Issues
+- If worker can't connect to Temporal, verify all services are healthy with `docker compose ps`
+- Check worker logs with `docker compose logs temporal-worker`
+- Ensure Docker has enough memory allocated (Temporal can be resource-intensive)
 
-### Package Not Found
-- Verify package exists in Artifactory
-- Check package version and availability
-- Ensure feed URL is correctly configured
-
-### Activity Not Loading
-- Verify activity methods have `[Activity]` attribute
-- Check assembly is properly loaded (review logs)
-- Ensure activity methods are public and static
-
-### Workflow Not Loading
-- Verify workflow classes have `[Workflow]` attribute
-- Ensure workflow run method has `[WorkflowRun]` attribute
-- Check workflow classes are public and non-static
-- Review logs for assembly loading errors
-
-### Hot Reload Issues
-- Check network connectivity to Artifactory
-- Verify authentication credentials
-- Review HotReloadWorkerService logs for restart errors
-- Ensure package assemblies are not locked by other processes
+### Blue/Green Deployment Issues
+- If status shows wrong live environment, check if `docker-compose.override.yml` exists and has correct values
+- If workers don't switch queues, restart with override file: `docker compose -f docker-compose.blue-green.yml -f docker-compose.override.yml up -d`
+- If deployment fails, check container logs: `docker compose -f docker-compose.blue-green.yml logs <container-name>`
+- If builds fail during deployment, ensure code compiles locally first: `dotnet build`
 
 ### Docker Issues
 - If containers fail to start, check logs with `docker compose logs <service-name>`
-- Ensure Docker has enough memory allocated (Temporal can be resource-intensive)
-- If the worker can't connect to Temporal, verify all services are healthy with `docker compose ps`
 - For permission issues on mounted volumes, check that Docker has access to the project directory
 - If health checks fail, wait a few minutes for services to fully initialize
+
+## Production Considerations
+
+For production deployment, consider:
+
+1. **Resource Allocation**: Ensure enough CPU/memory for both environments
+2. **Storage**: Each environment has separate volumes for data
+3. **Monitoring**: Set up alerts for container health and worker connectivity
+4. **Scaling**: You can scale up workers per environment if needed
+5. **Security**: Use proper secrets management for production credentials
+
+For detailed blue/green deployment instructions, see [BLUE_GREEN_DEPLOYMENT.md](BLUE_GREEN_DEPLOYMENT.md).

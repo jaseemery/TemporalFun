@@ -33,15 +33,12 @@ RUN apt-get update && apt-get install -y curl netcat-traditional && rm -rf /var/
 # Copy the published application
 COPY --from=publish /app/publish .
 
-# Create directory for downloaded packages and set permissions
-RUN mkdir -p /tmp/TemporalWorker/FeedPackages && \
-    chown -R temporal:temporal /app /tmp/TemporalWorker
+# Set permissions for application directory
+RUN chown -R temporal:temporal /app
 
 # Set environment variables for containerized environment
 ENV TEMPORAL_SERVER=temporal:7233
 ENV TASK_QUEUE=default
-ENV HOT_RELOAD_ENABLED=true
-ENV HOT_RELOAD_MODE=FileSystem
 
 # Switch to non-root user
 USER temporal
