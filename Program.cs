@@ -49,7 +49,8 @@ class Program
         // Load workflows from local assemblies
         var workflows = new Type[]
         {
-            typeof(TemporalWorkerApp.Workflows.SimpleWorkflow)
+            typeof(TemporalWorkerApp.Workflows.SimpleWorkflow),
+            typeof(TemporalWorkerApp.Workflows.CustomerOnboardingWorkflow)
         };
 
         var workerOptions = new Temporalio.Worker.TemporalWorkerOptions(taskQueue);

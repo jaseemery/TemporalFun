@@ -4,7 +4,7 @@ A Temporal worker application with built-in blue/green deployment capabilities f
 
 ## Features
 
-- **Zero Downtime Deployments**: Switch traffic instantly between active and standby environments
+- **Zero Downtime Deployments**: Switch traffic instantly between blue and green environments
 - **Task Queue Based**: Uses Temporal's built-in task queue load balancing
 - **Easy Rollback**: Switch back to previous environment in seconds
 - **Container Ready**: Fully containerized with Docker Compose
@@ -43,7 +43,7 @@ If you want to run everything in containers:
 
 #### 1. Start All Services
 ```bash
-docker compose up -d
+docker compose -f docker-compose.blue-green.yml up -d
 ```
 
 This starts:
@@ -59,7 +59,7 @@ If you want to run Temporal services in Docker but develop the worker locally:
 #### 1. Start Temporal Services Only
 ```bash
 # Start only the infrastructure services
-docker compose up temporal-db temporal temporal-ui -d
+docker compose -f docker-compose.blue-green.yml up temporal-db temporal temporal-ui -d
 ```
 
 #### 2. Run Worker Locally
@@ -146,7 +146,7 @@ var testOptions = new WorkflowOptions
 
 - **Zero Downtime**: Traffic switches instantly between environments
 - **Easy Rollback**: Switch back to previous environment in seconds
-- **Testing**: Test new deployments in standby before switching traffic
+- **Testing**: Test new deployments in staging before switching traffic
 - **Temporal Native**: Uses Temporal's built-in task queue load balancing
 - **No External Dependencies**: No load balancers or proxies required
 
@@ -207,22 +207,22 @@ When using the Docker setup, here are some useful commands:
 
 ```bash
 # Start all services
-docker compose up -d
+docker compose -f docker-compose.blue-green.yml up -d
 
 # View logs for all services
-docker compose logs
+docker compose -f docker-compose.blue-green.yml logs
 
 # View logs for specific service
-docker compose logs temporal-worker
+docker compose -f docker-compose.blue-green.yml logs temporal-worker-blue-1
 
 # Stop all services
-docker compose down
+docker compose -f docker-compose.blue-green.yml down
 
 # Rebuild and restart worker (after code changes)
-docker compose up --build temporal-worker -d
+docker compose -f docker-compose.blue-green.yml up --build temporal-worker-blue-1 -d
 
 # Start only infrastructure (no worker)
-docker compose up temporal-db temporal temporal-ui -d
+docker compose -f docker-compose.blue-green.yml up temporal-db temporal temporal-ui -d
 ```
 
 ## Architecture
@@ -238,8 +238,8 @@ The worker is built with these core components:
 ## Troubleshooting
 
 ### Worker Issues
-- If worker can't connect to Temporal, verify all services are healthy with `docker compose ps`
-- Check worker logs with `docker compose logs temporal-worker`
+- If worker can't connect to Temporal, verify all services are healthy with `docker compose -f docker-compose.blue-green.yml ps`
+- Check worker logs with `docker compose -f docker-compose.blue-green.yml logs temporal-worker-blue-1`
 - Ensure Docker has enough memory allocated (Temporal can be resource-intensive)
 
 ### Blue/Green Deployment Issues
@@ -249,7 +249,7 @@ The worker is built with these core components:
 - If builds fail during deployment, ensure code compiles locally first: `dotnet build`
 
 ### Docker Issues
-- If containers fail to start, check logs with `docker compose logs <service-name>`
+- If containers fail to start, check logs with `docker compose -f docker-compose.blue-green.yml logs <service-name>`
 - For permission issues on mounted volumes, check that Docker has access to the project directory
 - If health checks fail, wait a few minutes for services to fully initialize
 

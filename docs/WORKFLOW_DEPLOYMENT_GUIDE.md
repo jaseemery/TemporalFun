@@ -4,7 +4,7 @@ A comprehensive guide for safely deploying new workflows using the blue/green de
 
 ## Overview
 
-This guide walks through the complete process of adding a new workflow to the Temporal worker using our task queue-based active/standby deployment approach. This method ensures zero-downtime deployments and provides safe testing capabilities.
+This guide walks through the complete process of adding a new workflow to the Temporal worker using our task queue-based blue/green deployment approach. This method ensures zero-downtime deployments and provides safe testing capabilities.
 
 ## Deployment Architecture
 
@@ -14,15 +14,15 @@ This guide walks through the complete process of adding a new workflow to the Te
 ├─────────────────────────────────────────────────────────────────┤
 │  Task Queues:                                                   │
 │  ┌─────────────────┐    ┌─────────────────┐                    │
-│  │  production     │    │     standby     │                    │
-│  │   (active)      │    │   (inactive)    │                    │
+│  │  production     │    │     staging     │                    │
+│  │     (blue)      │    │     (green)     │                    │
 │  └─────────────────┘    └─────────────────┘                    │
 └─────────────────────────────────────────────────────────────────┘
            │                         │
            │                         │
            ▼                         ▼
 ┌─────────────────┐         ┌─────────────────┐
-│Active Environment│         │Standby Environment│
+│Blue Environment │         │Green Environment │
 │ Current Version │         │ New Version     │
 │ (2 workers)     │         │ (2 workers)     │
 └─────────────────┘         └─────────────────┘
@@ -150,19 +150,19 @@ Before deploying, check which environment is currently handling live traffic:
 
 Expected output:
 ```
-=== Deployment Status ===
-🟢 LIVE TRAFFIC:     Active environment (production queue)
-🟡 STAGING/TESTING:  Standby environment (staging queue)
+=== Blue-Green Deployment Status ===
+🔵 LIVE TRAFFIC:     Blue environment (production queue)
+🟢 STAGING/TESTING:  Green environment (staging queue)
 
 Task Queue Routing:
-  production queue → Active containers  (handling live customers)
-  staging queue    → Standby containers (for testing deployments)
+  production queue → Blue containers  (handling live customers)
+  staging queue    → Green containers (for testing deployments)
 
 Container Status:
 [Container status information]
 ```
 
-### Step 5: Deploy to Standby Environment
+### Step 5: Deploy to Green Environment
 
 Deploy the new workflow to the staging environment:
 
@@ -171,38 +171,38 @@ Deploy the new workflow to the staging environment:
 ```
 
 This will:
-1. Identify the current staging environment (standby in this example)
+1. Identify the current staging environment (green in this example)
 2. Rebuild Docker images with the new workflow
 3. Restart staging workers with the updated code
 4. Keep the live environment unchanged
 
 Expected output:
 ```
-[INFO] Current LIVE environment: active
-[INFO] Deploying new version to STAGING environment: standby
-[INFO] Rebuilding standby environment...
+[INFO] Current LIVE environment: blue
+[INFO] Deploying new version to STAGING environment: green
+[INFO] Rebuilding green environment...
 
 # Docker build process...
 
-[INFO] New version deployed to standby environment
-[INFO] To switch live traffic, run: ./blue-green-deploy.sh switch-to-standby
+[INFO] New version deployed to green environment
+[INFO] To switch live traffic, run: ./blue-green-deploy.sh switch-to-green
 ```
 
-### Step 6: Verify Deployment in Standby
+### Step 6: Verify Deployment in Green
 
 Check that the staging environment has the new workflow:
 
 ```bash
-# Check standby worker logs
-docker compose -f docker-compose.deployment.yml logs temporal-worker-standby-1 --tail 5
+# Check green worker logs
+docker compose -f docker-compose.blue-green.yml logs temporal-worker-green-1 --tail 5
 ```
 
 Expected output:
 ```
-temporal-worker-standby-1  | Starting Temporal worker with 3 activities and 2 workflows on task queue: staging
+temporal-worker-green-1  | Starting Temporal worker with 3 activities and 2 workflows on task queue: staging
 ```
 
-### Step 7: Test the New Workflow in Standby
+### Step 7: Test the New Workflow in Green
 
 Create a test script to verify the new workflow works correctly:
 
@@ -216,11 +216,11 @@ public class WorkflowTester
     {
         var client = await TemporalClient.ConnectAsync(new("localhost:7233"));
 
-        // Send test workflow to STAGING queue (standby environment)
+        // Send test workflow to STAGING queue (green environment)
         var testOptions = new WorkflowOptions
         {
             Id = "test-customer-onboarding-" + Guid.NewGuid(),
-            TaskQueue = "staging"  // ← Routes to standby environment with new code
+            TaskQueue = "staging"  // ← Routes to green environment with new code
         };
 
         var testRequest = new CustomerOnboardingRequest(
@@ -229,7 +229,7 @@ public class WorkflowTester
             Email: "test@example.com"
         );
 
-        Console.WriteLine("Starting test workflow in standby environment...");
+        Console.WriteLine("Starting test workflow in green environment...");
         
         var handle = await client.StartWorkflowAsync(
             (CustomerOnboardingWorkflow wf) => wf.RunAsync(testRequest),
@@ -249,8 +249,9 @@ public class WorkflowTester
 Run the test:
 
 ```bash
-# Compile and run test
-dotnet run --project TestCustomerOnboarding.csproj
+# Simple test using dotnet script
+echo 'using Temporalio.Client; var client = await TemporalClient.ConnectAsync(new("localhost:7233")); await client.StartWorkflowAsync("customer-onboarding", new[] { "test" }, new WorkflowOptions { Id = "test-" + DateTimeOffset.Now.ToUnixTimeSeconds(), TaskQueue = "staging" }); Console.WriteLine("Test workflow started on staging");' > test-staging.cs
+dotnet script test-staging.cs
 ```
 
 ### Step 8: Monitor Test Execution
@@ -258,18 +259,18 @@ dotnet run --project TestCustomerOnboarding.csproj
 Watch the staging environment logs during testing:
 
 ```bash
-# Monitor standby worker activity
-docker compose -f docker-compose.deployment.yml logs -f temporal-worker-standby-1
+# Monitor green worker activity
+docker compose -f docker-compose.blue-green.yml logs -f temporal-worker-green-1
 ```
 
 Expected log output:
 ```
-temporal-worker-standby-1  | Workflow CustomerOnboardingWorkflow started for customer: test-12345678
-temporal-worker-standby-1  | Activity EmailActivity.SendEmail starting...
-temporal-worker-standby-1  | Activity EmailActivity.SendEmail completed successfully
-temporal-worker-standby-1  | Activity DatabaseActivity.SaveData starting...
-temporal-worker-standby-1  | Activity DatabaseActivity.SaveData completed successfully
-temporal-worker-standby-1  | Workflow CustomerOnboardingWorkflow completed: Customer Test Customer onboarded successfully
+temporal-worker-green-1  | Workflow CustomerOnboardingWorkflow started for customer: test-12345678
+temporal-worker-green-1  | Activity EmailActivity.SendEmail starting...
+temporal-worker-green-1  | Activity EmailActivity.SendEmail completed successfully
+temporal-worker-green-1  | Activity DatabaseActivity.SaveData starting...
+temporal-worker-green-1  | Activity DatabaseActivity.SaveData completed successfully
+temporal-worker-green-1  | Workflow CustomerOnboardingWorkflow completed: Customer Test Customer onboarded successfully
 ```
 
 ### Step 9: Switch Traffic to New Version
@@ -277,14 +278,14 @@ temporal-worker-standby-1  | Workflow CustomerOnboardingWorkflow completed: Cust
 Once testing is successful, switch production traffic to the new version:
 
 ```bash
-./blue-green-deploy.sh switch-to-standby
+./blue-green-deploy.sh switch-to-green
 ```
 
 Expected output:
 ```
-[INFO] Switching to STANDBY environment (production traffic)
-[INFO] 🟢 STANDBY environment now handling LIVE TRAFFIC (production queue)
-[INFO] 🟡 ACTIVE environment ready for testing (staging queue)
+[INFO] Switching to GREEN environment (production traffic)
+[INFO] 🟢 GREEN environment now handling LIVE TRAFFIC (production queue)
+[INFO] 🔵 BLUE environment ready for testing (staging queue)
 
 # Workers restart with new queue assignments
 ```
