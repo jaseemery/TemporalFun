@@ -295,7 +295,7 @@ Expected output:
 Confirm the switch was successful:
 
 ```bash
-./simple-bg-deploy.sh status
+./blue-green-deploy.sh status
 ```
 
 Expected output:
@@ -304,8 +304,8 @@ Expected output:
 Current Active Environment: green
 
 Task Queue Assignment:
-  Blue (Standby):  standby queue       ← Old version available for rollback
-  Green (Active):  production queue    ← New version handling live traffic
+  Blue (Staging):  staging queue       ← Old version available for rollback
+  Green (Live):    production queue    ← New version handling live traffic
 ```
 
 ### Step 11: Test Production Workflow
@@ -321,7 +321,7 @@ public static async Task TestProductionWorkflowAsync()
     var productionOptions = new WorkflowOptions
     {
         Id = "customer-onboarding-" + Guid.NewGuid(),
-        TaskQueue = "production"  // ← Routes to active environment
+        TaskQueue = "production"  // ← Routes to live environment
     };
 
     var realRequest = new CustomerOnboardingRequest(
@@ -350,7 +350,7 @@ If issues are discovered after switching traffic, you can instantly rollback:
 
 ```bash
 # Switch back to previous environment
-./simple-bg-deploy.sh switch-to-blue
+./blue-green-deploy.sh switch-to-blue
 ```
 
 This will:
@@ -361,7 +361,7 @@ This will:
 ### Verify Rollback
 
 ```bash
-./simple-bg-deploy.sh status
+./blue-green-deploy.sh status
 ```
 
 Expected output:
@@ -371,7 +371,7 @@ Current Active Environment: blue
 
 Task Queue Assignment:
   Blue (Active):   production queue    ← Back to old version
-  Green (Standby): standby queue       ← New version available for debugging
+  Green (Staging): staging queue       ← New version available for debugging
 ```
 
 ## Advanced Deployment Patterns
@@ -381,15 +381,15 @@ Task Queue Assignment:
 While our system doesn't natively support percentage-based traffic splitting, you can simulate canary deployments:
 
 ```csharp
-// Route small percentage of workflows to standby for testing
+// Route small percentage of workflows to staging for testing
 public static async Task CanaryTestAsync()
 {
     var client = await TemporalClient.ConnectAsync(new("localhost:7233"));
     
     for (int i = 0; i < 100; i++)
     {
-        // Route 10% to standby (canary), 90% to production
-        var taskQueue = (i % 10 == 0) ? "standby" : "production";
+        // Route 10% to staging (canary), 90% to production
+        var taskQueue = (i % 10 == 0) ? "staging" : "production";
         
         var options = new WorkflowOptions
         {
@@ -438,19 +438,19 @@ public class CustomerOnboardingWorkflow
 1. **Workflow Success Rate**
    ```bash
    # Monitor workflow completion rates
-   docker compose -f docker-compose.deployment.yml logs | grep "completed successfully"
+   docker compose -f docker-compose.blue-green.yml logs | grep "completed successfully"
    ```
 
 2. **Activity Execution Times**
    ```bash
    # Watch for performance regressions
-   docker compose -f docker-compose.deployment.yml logs | grep "Activity.*completed"
+   docker compose -f docker-compose.blue-green.yml logs | grep "Activity.*completed"
    ```
 
 3. **Error Rates**
    ```bash
    # Monitor for errors in new workflows
-   docker compose -f docker-compose.deployment.yml logs | grep "ERROR\|FAILED"
+   docker compose -f docker-compose.blue-green.yml logs | grep "ERROR\|FAILED"
    ```
 
 ### Health Checks
@@ -520,7 +520,7 @@ app.MapGet("/health/workflows", () =>
    ```
    **Solution**: Restart containers with override file:
    ```bash
-   docker compose -f docker-compose.simple-bg.yml -f docker-compose.override.yml restart
+   docker compose -f docker-compose.blue-green.yml -f docker-compose.override.yml restart
    ```
 
 3. **Traffic Not Switching**
@@ -530,20 +530,20 @@ app.MapGet("/health/workflows", () =>
    **Solution**: Check override file and restart:
    ```bash
    cat docker-compose.override.yml
-   ./simple-bg-deploy.sh switch-to-<environment>
+   ./blue-green-deploy.sh switch-to-<environment>
    ```
 
 ### Debug Commands
 
 ```bash
 # Check worker environment variables
-docker compose -f docker-compose.deployment.yml exec temporal-worker-active-1 env | grep TASK_QUEUE
+docker compose -f docker-compose.blue-green.yml exec temporal-worker-blue-1 env | grep TASK_QUEUE
 
 # View recent workflow executions
-docker compose -f docker-compose.deployment.yml logs --since 10m | grep "Workflow.*started\|completed"
+docker compose -f docker-compose.blue-green.yml logs --since 10m | grep "Workflow.*started\|completed"
 
 # Monitor real-time activity
-docker compose -f docker-compose.deployment.yml logs -f temporal-worker-standby-1
+docker compose -f docker-compose.blue-green.yml logs -f temporal-worker-green-1
 ```
 
 ## Cleanup

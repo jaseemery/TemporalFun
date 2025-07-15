@@ -33,15 +33,15 @@ The blue/green deployment system uses Temporal's native task queue functionality
 
 ### 1. Initial Setup
 
-Start the active/standby infrastructure:
+Start the blue/green infrastructure:
 
 ```bash
 ./blue-green-deploy.sh start
 ```
 
 This creates:
-- **Active Environment**: 2 workers initially listening to `production` queue
-- **Standby Environment**: 2 workers initially listening to `staging` queue
+- **Blue Environment**: 2 workers initially listening to `production` queue
+- **Green Environment**: 2 workers initially listening to `staging` queue
 - **Shared Infrastructure**: Temporal server, UI, and PostgreSQL
 
 ### 2. Verify Setup
@@ -74,7 +74,7 @@ Confirm workers are listening to correct queues:
 # Check active worker
 docker compose -f docker-compose.blue-green.yml logs temporal-worker-blue-1 --tail 3
 
-# Check standby worker
+# Check green worker
 docker compose -f docker-compose.blue-green.yml logs temporal-worker-green-1 --tail 3
 ```
 
@@ -122,11 +122,11 @@ var handle = await client.StartWorkflowAsync(
 Once you've verified the staging environment is working correctly, switch traffic:
 
 ```bash
-# If standby environment is ready and you want to make it live
-./blue-green-deploy.sh switch-to-standby
+# If green environment is ready and you want to make it live
+./blue-green-deploy.sh switch-to-green
 
-# If active environment should handle live traffic again
-./blue-green-deploy.sh switch-to-active
+# If blue environment should handle live traffic again
+./blue-green-deploy.sh switch-to-blue
 ```
 
 This will:
@@ -157,7 +157,7 @@ If you need to rollback to the previous version:
 For example, if you switched to standby and need to rollback to active:
 
 ```bash
-./blue-green-deploy.sh switch-to-active
+./blue-green-deploy.sh switch-to-blue
 ```
 
 ## Advanced Usage
@@ -170,7 +170,7 @@ You can manually check which queue each worker is listening to:
 # Check active worker task queue
 docker compose -f docker-compose.blue-green.yml exec temporal-worker-blue-1 printenv TASK_QUEUE
 
-# Check standby worker task queue
+# Check green worker task queue
 docker compose -f docker-compose.blue-green.yml exec temporal-worker-green-1 printenv TASK_QUEUE
 ```
 
@@ -182,7 +182,7 @@ Monitor worker logs during deployment:
 # Watch active workers
 docker compose -f docker-compose.blue-green.yml logs -f temporal-worker-blue-1
 
-# Watch standby workers
+# Watch green workers
 docker compose -f docker-compose.blue-green.yml logs -f temporal-worker-green-1
 ```
 
@@ -211,7 +211,7 @@ public class WorkflowService
         _client = client;
     }
     
-    // Send to active environment (production traffic)
+    // Send to blue environment (production traffic)
     public async Task<WorkflowHandle> StartProductionWorkflow(object input)
     {
         var options = new WorkflowOptions
@@ -225,7 +225,7 @@ public class WorkflowService
             options);
     }
     
-    // Send to standby environment (testing)
+    // Send to green environment (testing)
     public async Task<WorkflowHandle> StartTestWorkflow(object input)
     {
         var options = new WorkflowOptions
@@ -271,7 +271,7 @@ The active/standby deployment system uses these files:
 ```
 TemporalWorker/
 ├── docker-compose.blue-green.yml         # Active/standby Docker configuration
-├── deployment.sh                          # Deployment management script
+├── blue-green-deploy.sh                   # Deployment management script
 ├── docker-compose.override.yml           # Generated automatically during switches
 ├── Dockerfile                            # Worker container definition
 └── docs/
@@ -283,17 +283,17 @@ TemporalWorker/
 
 ### Common Issues
 
-1. **Status shows wrong active environment**
+1. **Status shows wrong blue environment**
    - Check if `docker-compose.override.yml` exists and has correct values
    - Delete the override file and try switching again
 
 2. **Workers don't switch queues after deployment**
-   - Restart with override file: `docker compose -f docker-compose.simple-bg.yml -f docker-compose.override.yml up -d`
+   - Restart with override file: `docker compose -f docker-compose.blue-green.yml -f docker-compose.override.yml up -d`
    - Check container logs for errors
 
 3. **Deployment fails during build**
    - Ensure code compiles locally: `dotnet build`
-   - Check Docker logs: `docker compose -f docker-compose.simple-bg.yml logs <container-name>`
+   - Check Docker logs: `docker compose -f docker-compose.blue-green.yml logs <container-name>`
 
 4. **Switch appears successful but queues don't change**
    - Verify environment variables: `docker compose exec <container> printenv TASK_QUEUE`

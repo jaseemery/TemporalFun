@@ -175,7 +175,7 @@ cd tests && dotnet test --verbosity minimal
 | `TEMPORAL_SERVER` | Temporal server address | `localhost:7233` |
 | `TASK_QUEUE` | Task queue name (`production` for live, `staging` for testing) | `default` |
 | `ENVIRONMENT` | Environment name (blue/green) for deployments | `unknown` |
-| `WORKER_IDENTITY` | Unique worker identity for active/standby deployments | `worker-1` |
+| `WORKER_IDENTITY` | Unique worker identity for blue/green deployments | `worker-1` |
 
 ## Built-in Activities and Workflows
 
